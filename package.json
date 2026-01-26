@@ -1,0 +1,10 @@
+{
+  "name": "m3-audit-v8-online-ux",
+  "version": "0.8.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-env.cjs",
+    "dev": "python -m http.server 5173"
+  }
+}

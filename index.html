@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0060A0" />
+  <title>M3 Smart Sustainable Standard - Audit Tool</title>
+
+  <!-- Optional: nicer typography (fallbacks to system fonts) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./assets/icon-192.png" />
+</head>
+<body>
+  <main class="container">
+    <div id="app"></div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <span id="footerText">Données locales (navigateur) • Rapport: Imprimer → PDF • Pense à exporter ‘Audit project’ pour backup</span>
+      <a id="footerHome" class="link" href="#/">Accueil</a>
+    </div>
+  </footer>
+
+  <!-- Runtime environment (generated at build on Netlify). Fallback file exists for local dev. -->
+  <script src="./env.js"></script>
+  <!-- Supabase client (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

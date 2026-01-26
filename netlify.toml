@@ -1,0 +1,5 @@
+[build]
+  command = "npm run build"
+  publish = "."
+
+# Static hosting + hash routing is fine (no redirects needed)
