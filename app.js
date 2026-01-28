@@ -37,6 +37,20 @@ const I18N = {
     signingIn: "Connexion...",
     signIn: "Se connecter",
     signUp: "Créer un compte",
+
+    forgotPassword: "Mot de passe oublié ?",
+    resetPasswordTitle: "Réinitialiser le mot de passe",
+    resetPasswordSubtitle: "Recevez un lien par email",
+    sendResetLink: "Envoyer le lien",
+    resetEmailSent: "Si un compte existe pour cet email, un lien de réinitialisation vient d’être envoyé.",
+    updatePasswordTitle: "Définir un nouveau mot de passe",
+    updatePasswordSubtitle: "Choisissez un nouveau mot de passe pour votre compte",
+    updatePasswordBtn: "Mettre à jour",
+    passwordMismatch: "Les mots de passe ne correspondent pas.",
+    passwordTooShort: "Mot de passe trop court (8 caractères minimum).",
+    passwordUpdated: "Mot de passe mis à jour. Vous pouvez vous reconnecter.",
+    backToLogin: "Retour connexion",
+    invalidRecoveryLink: "Lien de récupération invalide ou expiré. Recommencez la procédure.",
     signOut: "Se déconnecter",
     signedIn: "Connecté",
     signedOut: "Déconnecté",
@@ -149,57 +163,6 @@ const I18N = {
     auditNotFoundTitle: "Audit introuvable",
     auditNotFoundBody: "Cet audit n’existe pas (ou a été supprimé).",
     updatedLabel: "Maj",
-
-admin: "Admin",
-adminConsole: "Console admin",
-adminAuditsTab: "Audits",
-adminUsersTab: "Utilisateurs",
-adminSearchPlaceholder: "Rechercher (site / auditeur / audit)…",
-adminRefresh: "Rafraîchir",
-adminForbidden: "Accès refusé (admin requis).",
-adminUsersIntro: "Gestion des comptes (invitations, rôles, activation).",
-adminInvite: "Inviter",
-adminInviteEmail: "Email",
-adminInviteRole: "Rôle",
-adminInviteSendEmail: "Envoyer l’email d’invitation",
-adminInviteLink: "Lien d’invitation",
-adminCopy: "Copier",
-adminDisable: "Désactiver",
-adminEnable: "Réactiver",
-adminSetRole: "Changer rôle",
-adminActions: "Actions",
-adminDownloadJson: "JSON",
-adminDownloadExcel: "Excel",
-adminPreviewReport: "Rapport",
-adminShareLink: "Lien public",
-adminVersionMismatch: "Version différente",
-adminVersionMismatch: "Version différente",
-portal: "Portail",
-portalTitle: "Portail client",
-portalSubtitle: "Rapports partagés avec vous",
-portalNoShares: "Aucun audit partagé pour ce compte.",
-portalOpenReport: "Ouvrir rapport",
-portalDownloadExcel: "Télécharger Excel",
-portalDownloadJson: "Télécharger JSON",
-adminFilters: "Filtres avancés",
-adminFilterFacility: "Facility",
-adminFilterStatus: "Statut",
-adminFilterDateFrom: "Date (du)",
-adminFilterDateTo: "Date (au)",
-adminFilterScoreMin: "Score min",
-adminFilterScoreMax: "Score max",
-adminFilterProgressMin: "Complétion min",
-adminFilterProgressMax: "Complétion max",
-adminFilterCriteriaVersion: "Version critères",
-adminFilterOnlyMismatch: "Version ≠ active",
-adminSelectAll: "Tout sélectionner",
-adminClearSel: "Vider sélection",
-adminExportSelectedJson: "Exporter JSON (sélection)",
-adminExportFilteredJson: "Exporter JSON (filtré)",
-adminExportSelectedExcel: "Exporter Excel (batch)",
-adminBackfillMeta: "Recalcul méta",
-adminShareToClient: "Partager au client",
-adminShareSaved: "Accès partagé",
   },
   en: {
     appTitle: "M3 Smart Sustainable Standard - Audit Tool",
@@ -229,6 +192,20 @@ adminShareSaved: "Accès partagé",
     signingIn: "Signing in...",
     signIn: "Sign in",
     signUp: "Create account",
+
+    forgotPassword: "Forgot password?",
+    resetPasswordTitle: "Reset password",
+    resetPasswordSubtitle: "Receive a reset link by email",
+    sendResetLink: "Send reset link",
+    resetEmailSent: "If an account exists for this email, a reset link has been sent.",
+    updatePasswordTitle: "Set a new password",
+    updatePasswordSubtitle: "Choose a new password for your account",
+    updatePasswordBtn: "Update password",
+    passwordMismatch: "Passwords do not match.",
+    passwordTooShort: "Password is too short (minimum 8 characters).",
+    passwordUpdated: "Password updated. Please sign in again.",
+    backToLogin: "Back to sign in",
+    invalidRecoveryLink: "Invalid or expired recovery link. Please restart the process.",
     signOut: "Sign out",
     signedIn: "Signed in",
     signedOut: "Signed out",
@@ -359,57 +336,6 @@ adminShareSaved: "Accès partagé",
     auditNotFoundTitle: "Audit not found",
     auditNotFoundBody: "This audit does not exist (or was deleted).",
     updatedLabel: "Updated",
-
-admin: "Admin",
-adminConsole: "Admin console",
-adminAuditsTab: "Audits",
-adminUsersTab: "Users",
-adminSearchPlaceholder: "Search (site / auditor / audit)…",
-adminRefresh: "Refresh",
-adminForbidden: "Forbidden (admin required).",
-adminUsersIntro: "User management (invites, roles, enable/disable).",
-adminInvite: "Invite",
-adminInviteEmail: "Email",
-adminInviteRole: "Role",
-adminInviteSendEmail: "Send invite email",
-adminInviteLink: "Invite link",
-adminCopy: "Copy",
-adminDisable: "Disable",
-adminEnable: "Enable",
-adminSetRole: "Change role",
-adminActions: "Actions",
-adminDownloadJson: "JSON",
-adminDownloadExcel: "Excel",
-adminPreviewReport: "Report",
-adminShareLink: "Public link",
-adminVersionMismatch: "Version mismatch",
-adminVersionMismatch: "Different version",
-portal: "Portal",
-portalTitle: "Client portal",
-portalSubtitle: "Reports shared with you",
-portalNoShares: "No shared audits for this account.",
-portalOpenReport: "Open report",
-portalDownloadExcel: "Download Excel",
-portalDownloadJson: "Download JSON",
-adminFilters: "Advanced filters",
-adminFilterFacility: "Facility",
-adminFilterStatus: "Status",
-adminFilterDateFrom: "Date (from)",
-adminFilterDateTo: "Date (to)",
-adminFilterScoreMin: "Min score",
-adminFilterScoreMax: "Max score",
-adminFilterProgressMin: "Min completion",
-adminFilterProgressMax: "Max completion",
-adminFilterCriteriaVersion: "Criteria version",
-adminFilterOnlyMismatch: "Version ≠ active",
-adminSelectAll: "Select all",
-adminClearSel: "Clear selection",
-adminExportSelectedJson: "Export JSON (selected)",
-adminExportFilteredJson: "Export JSON (filtered)",
-adminExportSelectedExcel: "Export Excel (batch)",
-adminBackfillMeta: "Recompute meta",
-adminShareToClient: "Share to client",
-adminShareSaved: "Shared",
   }
 };
 
@@ -528,31 +454,44 @@ function updateFooter(){
 }
 
 function topBar({title, subtitle, right}){
-  const authBtn = ONLINE_ENABLED ? (
-    AUTH.session
-      ? h("button",{class:"btn", onclick: async()=>{ await signOut(); showToast(t("signedOut")); go("#/login"); }}, t("signOut"))
-      : h("a",{class:"btn", href:"#/login"}, t("login"))
-  ) : null;
-
-  const adminBtn = (ONLINE_ENABLED && AUTH.session && AUTH.role === "admin")
-    ? h("a",{class:"btn", href:"#/admin"}, t("admin"))
-    : null;
-
-  const actions = [];
-  if (adminBtn) actions.push(adminBtn);
-  if (right) actions.push(right);
-  if (authBtn) actions.push(authBtn);
-
-  return h("div",{class:"topbar"},
-    h("div",{class:"brandRow"},
-      h("img",{src:"./assets/logo.svg", class:"brandLogo", alt:"M3"}),
-      h("div",{class:"brandText"},
-        h("div",{class:"brandTitle"}, title || "M3 Audit Tool"),
-        subtitle ? h("div",{class:"brandSub"}, subtitle) : null
-      )
-    ),
-    h("div",{class:"topActions"}, ...actions)
+  const langSel = h(
+    "select",
+    {
+      style: "min-width:86px",
+      onchange: (e)=> setLang(e.target.value)
+    },
+    h("option",{value:"fr"},"FR"),
+    h("option",{value:"en"},"EN")
   );
+  langSel.value = LANG;
+  return h("div",{class:"topbar"},
+    h("div",{class:"topbar-inner"},
+      h("div",{class:"brandRow"},
+        h("img",{class:"brandLogo", src:"./assets/logo.png", alt:"M3"}),
+        h("div",{class:"brandText"},
+          h("div",{class:"brandTitle"}, title || t("appTitle")),
+          subtitle ? h("div",{class:"brandSub"}, subtitle) : h("div",{class:"brandSub"}, t("appSubtitle"))
+        )
+      ),
+      (function(){
+        const online = (typeof ONLINE_ENABLED !== "undefined" && ONLINE_ENABLED);
+        const authBtn = !online ? null : (AUTH && AUTH.user
+          ? h("button",{class:"btn btn--ghost", onclick: async ()=>{ await signOut(); showToast(t("signedOut")); go("#/login"); }}, t("signOut"))
+          : h("a",{class:"btn btn--ghost", href:"#/login"}, t("signIn"))
+        );
+        return h("div",{class:"topActions"}, langSel, right || h("div",{}), authBtn || h("div",{}));
+      })()
+    )
+  );
+}
+
+function uuid(){
+  if (crypto && crypto.randomUUID) return crypto.randomUUID();
+  // fallback
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c=>{
+    const r = Math.random()*16|0, v = c === "x" ? r : (r&0x3|0x8);
+    return v.toString(16);
+  });
 }
 
 /* ---------- IndexedDB ---------- */
@@ -623,10 +562,79 @@ const SUPABASE_BUCKET = ENV.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "audit-photos
 const APP_URL = (ENV.APP_URL || "").endsWith('/') ? (ENV.APP_URL || "") : ((ENV.APP_URL || "") ? (ENV.APP_URL || "") + '/' : "");
 const REPORT_TTL_DAYS = Number.parseInt(ENV.REPORT_LINK_DEFAULT_TTL_DAYS || "90", 10);
 
+function appBaseUrl(){
+  // Prefer configured APP_URL (ends with /), fallback to current origin/path
+  if (APP_URL) return APP_URL;
+  const base = window.location.origin + window.location.pathname;
+  return base.endsWith('/') ? base : base + '/';
+}
+
+function getParamAnywhere(key){
+  try{
+    const u = new URL(window.location.href);
+    const v1 = u.searchParams.get(key);
+    if (v1) return v1;
+  }catch{}
+  const h = window.location.hash || "";
+  const idx = h.indexOf("?");
+  if (idx >= 0){
+    const qs = new URLSearchParams(h.slice(idx + 1));
+    const v2 = qs.get(key);
+    if (v2) return v2;
+  }
+  return null;
+}
+
+async function ensureRecoverySession(){
+  const sb = await initSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+
+  // Already have a session
+  const { data: sessData } = await sb.auth.getSession();
+  if (sessData?.session){
+    AUTH.session = sessData.session;
+    AUTH.user = sessData.session.user || null;
+    return sessData.session;
+  }
+
+  // PKCE flow (code)
+  const code = getParamAnywhere("code");
+  if (code){
+    const { data, error } = await sb.auth.exchangeCodeForSession(code);
+    if (error) throw error;
+    AUTH.session = data.session;
+    AUTH.user = data.session?.user || null;
+    // Clean URL (remove query-like params after hash)
+    try{
+      const cleanHash = (window.location.hash || '').split('?')[0];
+      window.history.replaceState({}, document.title, window.location.pathname + cleanHash);
+    }catch{}
+    return data.session;
+  }
+
+  // Fallback (token-based links)
+  const access_token = getParamAnywhere("access_token");
+  const refresh_token = getParamAnywhere("refresh_token");
+  if (access_token && refresh_token){
+    const { data, error } = await sb.auth.setSession({ access_token, refresh_token });
+    if (error) throw error;
+    AUTH.session = data.session;
+    AUTH.user = data.session?.user || null;
+    try{
+      const cleanHash = (window.location.hash || '').split('?')[0];
+      window.history.replaceState({}, document.title, window.location.pathname + cleanHash);
+    }catch{}
+    return data.session;
+  }
+
+  return null;
+}
+
+
 const ONLINE_ENABLED = !!(SUPABASE_URL && SUPABASE_ANON_KEY && typeof window !== 'undefined' && window.supabase && window.supabase.createClient);
 
 let SB = null;
-let AUTH = { session: null, user: null, role: null, roleLoadedAt: 0 };
+let AUTH = { session: null, user: null };
 
 async function initSupabase(){
   if (!ONLINE_ENABLED) return null;
@@ -642,14 +650,13 @@ async function initSupabase(){
   SB.auth.onAuthStateChange((_event, session)=>{
     AUTH.session = session;
     AUTH.user = session?.user || null;
-    AUTH.role = null;
-    AUTH.roleLoadedAt = 0;
-    // If user signs out, bounce to login (unless on public report)
+    // If user signs out, bounce to login (unless on public or auth routes)
     const parts = parseHash();
-    if (!session && parts[0] !== 'public'){
-      if (parts[0] !== 'login') go('#/login');
+    const open = new Set(['login','forgot-password','update-password']);
+    if (!session && parts[0] !== 'public' && !open.has(parts[0])){
+      go('#/login');
     }
-  });
+});
   // initial
   const { data } = await SB.auth.getSession();
   AUTH.session = data.session;
@@ -664,29 +671,6 @@ async function refreshSession(){
   AUTH.session = data.session;
   AUTH.user = data.session?.user || null;
   return data.session;
-}
-
-async function ensureRoleLoaded(force=false){
-  if (!ONLINE_ENABLED) return null;
-  if (!AUTH.session?.user) { AUTH.role = null; AUTH.roleLoadedAt = 0; return null; }
-  if (!force && AUTH.role && AUTH.roleLoadedAt && (Date.now() - AUTH.roleLoadedAt) < 60_000){
-    return AUTH.role;
-  }
-  try{
-    const sb = await initSupabase();
-    const { data, error } = await sb
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', AUTH.session.user.id)
-      .maybeSingle();
-    if (error) throw error;
-    AUTH.role = data?.role || 'auditor';
-  }catch(_e){
-    // If user_roles isn't installed yet, default to non-admin
-    AUTH.role = AUTH.role || 'auditor';
-  }
-  AUTH.roleLoadedAt = Date.now();
-  return AUTH.role;
 }
 
 async function signInWithEmail(email, password){
@@ -731,26 +715,6 @@ async function sbUpsertAudit(audit){
 
   const facilities = (audit.meta && Array.isArray(audit.meta.facilitiesAudited)) ? audit.meta.facilitiesAudited : [];
 
-  // Derive useful metadata for admin filters / portal (best-effort)
-  let status = null;
-  let progress_pct = null;
-  let overall_score = null;
-  let validated = null;
-  let audit_date = null;
-  try{
-    const dbData = await loadCriteriaDB();
-    const crit = (dbData?.criteria||[]).filter(c => !facilities.length || facilities.includes(c.facility));
-    const prog = computeProgress(crit, audit.responses||{}, c=> 'all');
-    progress_pct = prog?.[0]?.pct ?? 0;
-    validated = progress_pct === 100;
-    status = validated ? 'validated' : 'draft';
-    overall_score = computeWeightedScore(crit, audit.responses||{}, null).pct;
-    if (audit?.meta?.createdAtISO){
-      const d = new Date(audit.meta.createdAtISO);
-      audit_date = isNaN(d.getTime()) ? null : d.toISOString().slice(0,10);
-    }
-  }catch(e){ /* ignore */ }
-
   const payload = {
     user_id: user.id,
     audit_id: audit.auditId,
@@ -758,38 +722,11 @@ async function sbUpsertAudit(audit){
     auditor_name: audit.meta?.auditorName || null,
     facilities,
     criteria_version: audit.criteriaVersion || audit.meta?.criteriaVersion || null,
-    status,
-    progress_pct,
-    overall_score,
-    validated,
-    audit_date,
     data: audit
   };
 
-  try{
-    const { error } = await sb.from('v8_audits').upsert(payload, { onConflict: 'user_id,audit_id' });
-    if (error) throw error;
-  }catch(e){
-    // If the DB schema hasn't been upgraded (portal.sql not run yet),
-    // retry with a minimal payload that matches schema.sql.
-    const msg = (e && e.message) ? e.message : String(e||'');
-    if (/column .* does not exist/i.test(msg) && /(status|progress_pct|overall_score|validated|audit_date)/i.test(msg)){
-      const minimal = {
-        user_id: user.id,
-        audit_id: audit.auditId,
-        site_name: audit.meta?.siteName || null,
-        auditor_name: audit.meta?.auditorName || null,
-        facilities,
-        criteria_version: audit.criteriaVersion || audit.meta?.criteriaVersion || null,
-        data: audit
-      };
-      const { error: e2 } = await sb.from('v8_audits').upsert(minimal, { onConflict: 'user_id,audit_id' });
-      if (e2) throw e2;
-      // Keep going, but admin filters / portal features will be limited until portal.sql is applied.
-    }else{
-      throw e;
-    }
-  }
+  const { error } = await sb.from('v8_audits').upsert(payload, { onConflict: 'user_id,audit_id' });
+  if (error) throw error;
   return true;
 }
 
@@ -802,19 +739,6 @@ async function sbGetAudit(auditId){
     .select('data')
     .eq('user_id', user.id)
     .eq('audit_id', auditId)
-    .maybeSingle();
-  if (error) throw error;
-  return data?.data || null;
-}
-
-async function sbGetAuditByRowId(rowId){
-  const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
-  await sbRequireUser();
-  const { data, error } = await sb
-    .from('v8_audits')
-    .select('data')
-    .eq('id', rowId)
     .maybeSingle();
   if (error) throw error;
   return data?.data || null;
@@ -878,197 +802,6 @@ async function sbGetPublicReport(token){
   if (error) throw error;
   return data || null;
 }
-
-// ---- Admin API (Netlify Functions) ----
-async function adminApi(action, payload){
-  if (!ONLINE_ENABLED) throw new Error("Online mode only");
-  const session = await refreshSession();
-  if (!session?.access_token) throw new Error(t("mustLogin"));
-  const res = await fetch(`/.netlify/functions/admin-users?action=${encodeURIComponent(action)}`, {
-    method: payload ? "POST" : "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${session.access_token}`
-    },
-    body: payload ? JSON.stringify(payload) : undefined
-  });
-  const txt = await res.text();
-  let data;
-  try{ data = txt ? JSON.parse(txt) : null; }catch(_e){ data = { raw: txt }; }
-  if (!res.ok){
-    const msg = (data && (data.error || data.message)) ? (data.error || data.message) : txt;
-    throw new Error(msg || `HTTP ${res.status}`);
-  }
-  return data;
-}
-
-// ---- Admin DB operations (Supabase, RLS-protected by is_admin()) ----
-
-async function sbAdminListAudits(filters={}){
-  const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
-  await sbRequireUser();
-  await ensureRoleLoaded();
-  if (AUTH.role !== 'admin') throw new Error('Forbidden');
-
-  const f = filters || {};
-  let q = sb
-    .from('v8_audits')
-    .select('id, user_id, audit_id, site_name, auditor_name, facilities, criteria_version, status, progress_pct, overall_score, validated, audit_date, updated_at')
-    .order('updated_at', { ascending: false })
-    .limit(200);
-
-  const term = (f.search || f.searchTerm || '').trim();
-  if (term){
-    // OR search over basic text columns
-    const esc = term;
-    q = q.or(`audit_id.ilike.%${esc}%,site_name.ilike.%${esc}%,auditor_name.ilike.%${esc}%`);
-  }
-
-  if (f.criteriaVersion){
-    q = q.eq('criteria_version', f.criteriaVersion);
-  }
-
-  if (f.status && f.status !== 'all'){
-    q = q.eq('status', f.status);
-  }
-
-  if (f.validated === true) q = q.eq('validated', true);
-  if (f.validated === false) q = q.eq('validated', false);
-
-  if (f.facility){
-    const facs = Array.isArray(f.facility) ? f.facility : [f.facility];
-    // overlaps any
-    if (facs.filter(Boolean).length) q = q.overlaps('facilities', facs.filter(Boolean));
-  }
-
-  if (f.dateFrom){
-    q = q.gte('audit_date', f.dateFrom);
-  }
-  if (f.dateTo){
-    q = q.lte('audit_date', f.dateTo);
-  }
-
-  if (Number.isFinite(f.scoreMin)) q = q.gte('overall_score', f.scoreMin);
-  if (Number.isFinite(f.scoreMax)) q = q.lte('overall_score', f.scoreMax);
-  if (Number.isFinite(f.progressMin)) q = q.gte('progress_pct', f.progressMin);
-  if (Number.isFinite(f.progressMax)) q = q.lte('progress_pct', f.progressMax);
-
-  try{
-    const { data, error } = await q;
-    if (error) throw error;
-    return data || [];
-  }catch(e){
-    const msg = (e && e.message) ? e.message : String(e||'');
-    // If portal.sql hasn't been applied yet, meta columns may not exist.
-    if (/column .* does not exist/i.test(msg) && /(status|progress_pct|overall_score|validated|audit_date)/i.test(msg)){
-      let q2 = sb
-        .from('v8_audits')
-        .select('id, user_id, audit_id, site_name, auditor_name, facilities, criteria_version, updated_at')
-        .order('updated_at', { ascending: false })
-        .limit(200);
-      const term2 = (f.search || f.searchTerm || '').trim();
-      if (term2){
-        q2 = q2.or(`audit_id.ilike.%${term2}%,site_name.ilike.%${term2}%,auditor_name.ilike.%${term2}%`);
-      }
-      if (f.criteriaVersion) q2 = q2.eq('criteria_version', f.criteriaVersion);
-      const { data, error } = await q2;
-      if (error) throw error;
-      return (data||[]).map(r => ({...r, status:null, progress_pct:null, overall_score:null, validated:null, audit_date:null}));
-    }
-    throw e;
-  }
-}
-
-async function sbAdminGetAuditByRowId(rowId){
-  const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
-  await sbRequireUser();
-  await ensureRoleLoaded();
-  if (AUTH.role !== 'admin') throw new Error('Forbidden');
-
-  const { data, error } = await sb
-    .from('v8_audits')
-    .select('id, user_id, audit_id, data, criteria_version')
-    .eq('id', rowId)
-    .maybeSingle();
-  if (error) throw error;
-  return data || null;
-}
-
-async function sbAdminShareAudit(auditRowId, clientEmail, clientName=''){
-  const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
-  await sbRequireUser();
-  await ensureRoleLoaded();
-  if (AUTH.role !== 'admin') throw new Error('Forbidden');
-
-  const email = String(clientEmail||'').trim().toLowerCase();
-  if (!email || !email.includes('@')) throw new Error('Invalid email');
-
-  const payload = {
-    audit_row_id: auditRowId,
-    client_email: email,
-    client_name: clientName ? String(clientName).trim() : null,
-    created_by: AUTH.user?.id || null
-  };
-
-  const { error } = await sb.from('v8_audit_shares').insert(payload);
-  if (error) throw error;
-  return true;
-}
-
-async function sbListSharedAudits(){
-  const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
-  const user = await sbRequireUser();
-
-  const { data, error } = await sb
-    .from('v8_audit_shares')
-    .select('id, audit_row_id, client_email, client_name, created_at, audit: v8_audits ( id, audit_id, site_name, auditor_name, facilities, criteria_version, status, progress_pct, overall_score, validated, audit_date, updated_at )')
-    .eq('client_email', (user.email||'').toLowerCase())
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-
-  return (data||[]).map(r => ({
-    shareId: r.id,
-    auditRowId: r.audit_row_id,
-    audit: r.audit || null,
-    clientName: r.client_name || '',
-    createdAt: r.created_at || ''
-  }));
-}
-
-async function sbAdminGetAudit(userId, auditId){
-  const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
-  await sbRequireUser();
-  const { data, error } = await sb
-    .from('v8_audits')
-    .select('data, criteria_version, site_name, auditor_name, facilities, updated_at, created_at')
-    .eq('user_id', userId)
-    .eq('audit_id', auditId)
-    .maybeSingle();
-  if (error) throw error;
-  return data || null;
-}
-
-async function sbAdminCreateReportLink(userId, auditId){
-  const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
-  await sbRequireUser();
-  const ttl = Number.isFinite(REPORT_TTL_DAYS) ? REPORT_TTL_DAYS : 90;
-  const expires = new Date(Date.now() + ttl * 24 * 3600 * 1000);
-  const token = uuid();
-  const { error } = await sb
-    .from('v8_report_links')
-    .insert({ token, user_id: userId, audit_id: auditId, expires_at: expires.toISOString() });
-  if (error) throw error;
-  const base = APP_URL || (location.origin + location.pathname.replace(/\/[^\/]*$/, '/') );
-  return { token, url: `${base}#/public/${token}`, expiresAtISO: expires.toISOString() };
-}
-
-
 
 
 async function sbUploadPhoto(auditId, criterionId, photoId, dataUrl){
@@ -1237,42 +970,6 @@ function toExcelXml(headers, rows, sheetName="Audit"){
   const workbookClose = `</Workbook>`;
   return xmlHeader + workbookOpen + styles + wsOpen + headerRow + bodyRows + wsClose + workbookClose;
 }
-
-function toExcelXmlMulti(sheets){
-  // sheets: Array<{name, headers, rows}>
-  const esc = (s)=> String(s??"")
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-  const xmlHeader = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>`;
-  const workbookOpen = `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
-    xmlns:o="urn:schemas-microsoft-com:office:office"
-    xmlns:x="urn:schemas-microsoft-com:office:excel"
-    xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
-    xmlns:html="http://www.w3.org/TR/REC-html40">`;
-  const styles = `<Styles>
-    <Style ss:ID="sHeader"><Font ss:Bold="1"/><Alignment ss:Horizontal="Center"/></Style>
-    <Style ss:ID="sText"><NumberFormat ss:Format="@"/></Style>
-  </Styles>`;
-  const worksheets = (sheets||[]).map(sh=>{
-    const headers = sh.headers || [];
-    const rows = sh.rows || [];
-    const name = (sh.name || "Audit").toString();
-    const wsOpen = `<Worksheet ss:Name="${esc(name)}"><Table>`;
-    const headerRow = `<Row>${headers.map(h=> `<Cell ss:StyleID="sHeader"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join("")}</Row>`;
-    const bodyRows = rows.map(r=>{
-      return `<Row>${headers.map(h=>{
-        const v = r[h];
-        const isNum = typeof v === "number" && Number.isFinite(v);
-        const type = isNum ? "Number" : "String";
-        const val = isNum ? String(v) : esc(String(v??""));
-        return `<Cell ss:StyleID="sText"><Data ss:Type="${type}">${val}</Data></Cell>`;
-      }).join("")}</Row>`;
-    }).join("");
-    const wsClose = `</Table></Worksheet>`;
-    return wsOpen + headerRow + bodyRows + wsClose;
-  }).join("");
-  const workbookClose = `</Workbook>`;
-  return xmlHeader + workbookOpen + styles + worksheets + workbookClose;
-}
 function formatDateEU(iso){
   try{
     const d = iso ? new Date(iso) : new Date();
@@ -1410,7 +1107,8 @@ function dataUrlToBlob(dataUrl){
 /* ---------- Router ---------- */
 function parseHash(){
   const raw = (location.hash || "#/").slice(1); // remove #
-  const parts = raw.split("/").filter(Boolean);
+  const noQuery = raw.split("?")[0];
+  const parts = noQuery.split("/").filter(Boolean);
   return parts;
 }
 
@@ -1467,6 +1165,7 @@ async function viewLogin(){
             h('button',{class:'btn', onclick: doSignIn}, t('signIn')),
             h('button',{class:'btn btn--ghost', onclick: doSignUp}, t('signUp'))
           ),
+          h('div',{class:'row-between', style:'margin-top:2px'}, h('a',{class:'link small', href:'#/forgot-password'}, t('forgotPassword'))),
           h('div',{class:'small muted'}, t('loginHint'))
         )
       )
@@ -1474,6 +1173,124 @@ async function viewLogin(){
   );
   setRoot(root);
 }
+
+
+async function viewForgotPassword(){
+  if (!ONLINE_ENABLED){
+    return go('#/');
+  }
+  await initSupabase();
+
+  const email = h('input',{type:'email', placeholder:'name@domain.com', autocomplete:'email'});
+  const msg = h('div',{class:'small muted'});
+
+  async function doSend(){
+    msg.textContent = '';
+    const e = email.value.trim();
+    if (!e){
+      msg.textContent = t('emailLabel') + " ?";
+      return;
+    }
+    try{
+      const sb = await initSupabase();
+      const redirectTo = `${appBaseUrl()}#/update-password`;
+      const { error } = await sb.auth.resetPasswordForEmail(e, { redirectTo });
+      if (error) throw error;
+      msg.textContent = t('resetEmailSent');
+    }catch(err){
+      msg.textContent = (err && err.message) ? err.message : String(err);
+    }
+  }
+
+  const root = h('div',{},
+    topBar({title: t('resetPasswordTitle'), subtitle: t('resetPasswordSubtitle'), right: h('div',{class:'row'}, h('a',{class:'btn btn--ghost', href:'#/login'}, t('backToLogin')))}),
+    h('div',{class:'wrap'},
+      h('div',{class:'card', style:'max-width:520px; margin:0 auto'},
+        h('div',{class:'grid', style:'gap:12px'},
+          h('div',{}, h('div',{class:'small muted'}, t('emailLabel')), email),
+          msg,
+          h('div',{class:'row', style:'gap:10px; flex-wrap:wrap'},
+            h('button',{class:'btn', onclick: doSend}, t('sendResetLink')),
+            h('a',{class:'btn btn--ghost', href:'#/login'}, t('backToLogin'))
+          )
+        )
+      )
+    )
+  );
+  setRoot(root);
+}
+
+async function viewUpdatePassword(){
+  if (!ONLINE_ENABLED){
+    return go('#/');
+  }
+  await initSupabase();
+
+  const pass1 = h('input',{type:'password', placeholder:'••••••••', autocomplete:'new-password'});
+  const pass2 = h('input',{type:'password', placeholder:'••••••••', autocomplete:'new-password'});
+  const msg = h('div',{class:'small muted'});
+
+  // Try to establish recovery session (via code/token)
+  let session = null;
+  try{
+    session = await ensureRecoverySession();
+  }catch(err){
+    msg.textContent = (err && err.message) ? err.message : String(err);
+  }
+
+  async function doUpdate(){
+    msg.textContent = '';
+    const p1 = pass1.value || '';
+    const p2 = pass2.value || '';
+    if (p1.length < 8){
+      msg.textContent = t('passwordTooShort');
+      return;
+    }
+    if (p1 !== p2){
+      msg.textContent = t('passwordMismatch');
+      return;
+    }
+    try{
+      const sb = await initSupabase();
+      const { error } = await sb.auth.updateUser({ password: p1 });
+      if (error) throw error;
+      showToast(t('passwordUpdated'));
+      // Safety: sign out, then ask user to sign in again
+      await signOut();
+      go('#/login');
+    }catch(err){
+      msg.textContent = (err && err.message) ? err.message : String(err);
+    }
+  }
+
+  const body = session ? h('div',{class:'grid', style:'gap:12px'},
+      h('div',{}, h('div',{class:'small muted'}, t('passwordLabel')), pass1),
+      h('div',{}, h('div',{class:'small muted'}, t('passwordLabel')), pass2),
+      msg,
+      h('div',{class:'row', style:'gap:10px; flex-wrap:wrap'},
+        h('button',{class:'btn', onclick: doUpdate}, t('updatePasswordBtn')),
+        h('a',{class:'btn btn--ghost', href:'#/login'}, t('backToLogin'))
+      )
+    )
+    : h('div',{class:'grid', style:'gap:12px'},
+        h('div',{class:'small muted'}, t('invalidRecoveryLink')),
+        h('div',{class:'row', style:'gap:10px; flex-wrap:wrap'},
+          h('a',{class:'btn', href:'#/forgot-password'}, t('resetPasswordTitle')),
+          h('a',{class:'btn btn--ghost', href:'#/login'}, t('backToLogin'))
+        )
+      );
+
+  const root = h('div',{},
+    topBar({title: t('updatePasswordTitle'), subtitle: t('updatePasswordSubtitle')}),
+    h('div',{class:'wrap'},
+      h('div',{class:'card', style:'max-width:520px; margin:0 auto'},
+        body
+      )
+    )
+  );
+  setRoot(root);
+}
+
 
 async function viewStart(){
   const dbData = await loadCriteriaDB();
@@ -1513,15 +1330,8 @@ async function viewStart(){
       photoSeq: 1,
       updatedAtISO: now.toISOString(),
     };
-    try{
-      await dbPutAudit(audit);
-      go(`#/audit/${auditId}`);
-    }catch(e){
-      const msg = (e && e.message) ? e.message : String(e);
-      alert(msg + "
-
-Si tu viens d'installer la version Admin/Portail, vérifie que tu as bien exécuté supabase/portal.sql (en plus de schema.sql et admin-rls.sql).");
-    }
+    await dbPutAudit(audit);
+    go(`#/audit/${auditId}`);
   }}, t("createAudit"));
 
   const importInput = h("input",{type:"file", accept:"application/json"});
@@ -2758,542 +2568,6 @@ function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncI
 </body></html>`;
 }
 
-
-async function viewPortal(){
-  if (!ONLINE_ENABLED) return viewStart();
-  await sbRefreshSession();
-  await ensureRoleLoaded();
-  if (!AUTH.session) return viewLogin();
-
-  const wrap = h('div',{});
-
-  const right = h('div',{class:'row',style:'gap:8px'},
-    ...(AUTH.role==='admin' || AUTH.role==='auditor' ? [h('a',{class:'btn', href:'#/'}, t('home'))] : []),
-    h('button',{class:'btn', onclick: async()=>{ await sbSignOut(); location.hash='#/login'; }}, t('signOut'))
-  );
-
-  const top = topBar({title: t('portalTitle'), subtitle: t('portalSubtitle'), right});
-  const body = h('div',{class:'container'});
-  const list = h('div',{class:'list'});
-  body.appendChild(list);
-
-  wrap.appendChild(top);
-  wrap.appendChild(body);
-  mount(wrap);
-
-  try{
-    const shares = await sbListSharedAudits();
-    if (!shares.length){
-      list.appendChild(h('div',{class:'muted'}, t('portalNoShares')));
-      return;
-    }
-
-    for (const s of shares){
-      const a = s.audit || {};
-      const row = h('div',{class:'card'});
-      const head = h('div',{class:'row',style:'justify-content:space-between;align-items:flex-start;gap:12px'},
-        h('div',{},
-          h('div',{class:'h2'}, a.site_name || '—'),
-          h('div',{class:'muted',style:'margin-top:4px'},
-            `${t('auditorLabel')}: ${a.auditor_name || '—'} • ${t('lastUpdate')}: ${formatDateEU(a.updated_at || '')}`
-          ),
-          h('div',{class:'muted',style:'margin-top:4px'},
-            `${t('facilitiesAudited')}: ${(a.facilities || []).join(', ') || '—'}`
-          )
-        ),
-        h('div',{class:'row',style:'gap:8px;flex-wrap:wrap;justify-content:flex-end'},
-          h('button',{class:'btn', onclick: async()=>{ location.hash = `#/shared-report/${encodeURIComponent(a.id)}`; }}, t('portalOpenReport')),
-          h('button',{class:'btn', onclick: async()=>{ await downloadSharedJson(a.id, a.site_name); }}, t('portalDownloadJson')),
-          h('button',{class:'btn', onclick: async()=>{ await downloadSharedExcel(a.id, a.site_name); }}, t('portalDownloadExcel'))
-        )
-      );
-
-      // status badges
-      const badges = h('div',{class:'row',style:'gap:8px;flex-wrap:wrap;margin-top:8px'},
-        h('span',{class:'chip'}, `${t('adminStatus')}: ${a.status || '—'}`),
-        (a.progress_pct!==null && a.progress_pct!==undefined) ? h('span',{class:'chip'}, `${t('adminProgress')}: ${a.progress_pct}%`) : null,
-        (a.overall_score!==null && a.overall_score!==undefined) ? h('span',{class:'chip'}, `${t('adminScore')}: ${Math.round(a.overall_score)}%`) : null,
-        a.criteria_version ? h('span',{class:'chip'}, `${t('criteriaVersion')}: ${a.criteria_version}`) : null
-      );
-
-      row.appendChild(head);
-      row.appendChild(badges);
-      list.appendChild(row);
-    }
-  }catch(e){
-    list.appendChild(h('div',{class:'error'}, String(e?.message||e)));
-  }
-}
-
-async function downloadSharedJson(rowId, siteName){
-  const audit = await sbGetAuditByRowId(rowId);
-  if (!audit) throw new Error('Audit introuvable');
-  const fname = `M3_Audit_${(siteName||'audit').toString().replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.json`;
-  downloadText(fname, JSON.stringify(audit, null, 2), 'application/json');
-}
-
-async function downloadSharedExcel(rowId, siteName){
-  const audit = await sbGetAuditByRowId(rowId);
-  if (!audit) throw new Error('Audit introuvable');
-  const dbData = await loadCriteriaDB();
-  const auditedFacilities = (audit.meta?.facilitiesAudited && audit.meta.facilitiesAudited.length)
-    ? audit.meta.facilitiesAudited
-    : (dbData.facilities || [...new Set((dbData.criteria||[]).map(c=>c.facility))].filter(Boolean).sort());
-  const criteria = (dbData.criteria||[]).filter(c => !auditedFacilities.length || auditedFacilities.includes(c.facility));
-  const exp = buildAuditExportRows(criteria, audit.responses||{}, audit.meta);
-  const xls = toExcelXml(exp.headers, exp.rows, 'Audit');
-  const safe = (siteName||audit.meta?.siteName||'audit').toString().replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,60);
-  downloadText(`M3_Audit_${safe}.xls`, xls, 'application/vnd.ms-excel');
-}
-
-async function viewSharedReport(rowId){
-  if (!ONLINE_ENABLED) return viewStart();
-  await sbRefreshSession();
-  await ensureRoleLoaded();
-  if (!AUTH.session) return viewLogin();
-
-  const audit = await sbGetAuditByRowId(rowId);
-  if (!audit) {
-    const wrap = h('div',{}, topBar({title: t('portalTitle'), subtitle: t('portalSubtitle'), right: h('a',{class:'btn', href:'#/portal'}, t('portal'))}), h('div',{class:'container'}, h('div',{class:'error'}, 'Audit introuvable')));
-    mount(wrap);
-    return;
-  }
-
-  // Reuse report view but read-only
-  const right = h('div',{class:'row',style:'gap:8px'},
-    h('a',{class:'btn', href:'#/portal'}, t('portal')),
-    h('button',{class:'btn', onclick: async()=>{ await downloadSharedExcel(rowId, audit.meta?.siteName); }}, t('portalDownloadExcel')),
-    h('button',{class:'btn', onclick: async()=>{ await downloadSharedJson(rowId, audit.meta?.siteName); }}, t('portalDownloadJson')),
-    h('button',{class:'btn', onclick: async()=>{ await sbSignOut(); location.hash='#/login'; }}, t('signOut'))
-  );
-
-  const wrap = h('div',{});
-  wrap.appendChild(topBar(t('reportTitle'), right));
-  const body = h('div',{class:'container'});
-  wrap.appendChild(body);
-
-  const dbData = await loadCriteriaDB();
-  const auditedFacilities = (audit.meta?.facilitiesAudited && audit.meta.facilitiesAudited.length)
-    ? audit.meta.facilitiesAudited
-    : (dbData.facilities || [...new Set((dbData.criteria||[]).map(c=>c.facility))].filter(Boolean).sort());
-  const criteria = (dbData.criteria||[]).filter(c => !auditedFacilities.length || auditedFacilities.includes(c.facility));
-
-  const report = buildReportHTML(dbData, criteria, audit.responses||{}, audit.meta||{}, { includeEvidence: true });
-  const frame = h('iframe',{class:'reportFrame'});
-  body.appendChild(frame);
-  mount(wrap);
-  frame.srcdoc = report;
-}
-async function viewAdmin(){
-  if (!ONLINE_ENABLED){
-    return viewStart();
-  }
-  await initSupabase();
-  await refreshSession();
-  await ensureRoleLoaded(true);
-
-  if (AUTH.role !== "admin"){
-    return setRoot(h("div",{},
-      topBar({title: t("adminConsole"), subtitle: t("adminForbidden"), right: h("a",{class:"btn", href:"#/"}, t("home"))}),
-      h("div",{class:"wrap"},
-        h("div",{class:"card"},
-          h("div",{class:"h2"}, t("adminForbidden")),
-          h("div",{class:"small muted", style:"margin-top:6px"}, "Tip: add your user UUID to public.user_roles as role='admin'.")
-        )
-      )
-    ));
-  }
-
-  const dbData = await loadCriteriaDB();
-  const body = h("div",{class:"wrap"});
-  const tabs = h("div",{class:"tabs"});
-  const tabAudits = h("div",{class:"tab active"}, t("adminAuditsTab"));
-  const tabUsers = h("div",{class:"tab"}, t("adminUsersTab"));
-  tabs.append(tabAudits, tabUsers);
-
-  const state = {
-    tab: "audits",
-    q: "",
-    audits: [],
-    users: [],
-    rolesById: {},
-    busy: false,
-    filters: { facility: [], status: 'all', validated: null, dateFrom: '', dateTo: '', scoreMin: null, scoreMax: null, progressMin: null, progressMax: null, criteriaVersion: '', onlyMismatch: false },
-    selected: new Set()
-  };
-
-  const search = h("input",{placeholder: t("adminSearchPlaceholder")});
-  const refreshBtn = h("button",{class:"btn", onclick: async()=>{ await loadCurrent(); }}, t("adminRefresh"));
-
-  search.addEventListener("input", ()=>{ state.q = search.value; });
-
-  async function loadAudits(){
-    state.busy = true; render();
-    try{ state.audits = await sbAdminListAudits({ search: state.q, ...state.filters });
-      if (state.filters.onlyMismatch && dbData.version){
-        state.audits = state.audits.filter(a => a.criteria_version && a.criteria_version !== dbData.version);
-      } }
-    catch(e){ showToast(String(e?.message||e)); }
-    finally{ state.busy = false; render(); }
-  }
-
-  async function loadUsers(){
-    state.busy = true; render();
-    try{
-      const data = await adminApi("listUsers");
-      state.users = data.users || [];
-      state.rolesById = data.rolesById || {};
-    }catch(e){ showToast(String(e?.message||e)); }
-    finally{ state.busy = false; render(); }
-  }
-
-  async function loadCurrent(){
-    if (state.tab === "audits") return loadAudits();
-    return loadUsers();
-  }
-
-  function renderAudits(){
-    const list = h("div",{class:"list"});
-
-    // Selection helpers
-    const selectedCount = state.selected.size;
-    const btnSelectAll = h("button",{class:"btn", onclick: ()=>{ for (const a of state.audits){ state.selected.add(a.id); } render(); }}, t("adminSelectAll"));
-    const btnClearSel = h("button",{class:"btn btn--ghost", onclick: ()=>{ state.selected.clear(); render(); }}, t("adminClearSel"));
-
-    const btnExportSelJson = h("button",{class:"btn", onclick: async()=>{ await exportAudits('json', 'selected'); }}, t("adminExportSelectedJson"));
-    const btnExportFilJson = h("button",{class:"btn", onclick: async()=>{ await exportAudits('json', 'filtered'); }}, t("adminExportFilteredJson"));
-    const btnExportSelXls = h("button",{class:"btn", onclick: async()=>{ await exportAudits('excel', 'selected'); }}, t("adminExportSelectedExcel"));
-
-    const btnBackfill = h("button",{class:"btn", onclick: async()=>{ await backfillMeta(); }}, t("adminBackfillMeta"));
-
-    // Filters UI
-    const f = state.filters;
-    const facilities = (dbData.facilities || ["Marina","Yacht Club","Sailing School"]);
-    const facilityChecks = facilities.map(name => {
-      const el = h("input",{type:"checkbox", checked: f.facility.includes(name), onchange: ()=>{ if (el.checked){ if (!f.facility.includes(name)) f.facility.push(name); } else { f.facility = f.facility.filter(x=>x!==name); } }});
-      return h("label",{class:"row small", style:"align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border); border-radius:12px; background:#fff"}, el, h("span",{style:"font-weight:800"}, name));
-    });
-
-    const statusSel = h("select",{onchange: ()=>{ f.status = statusSel.value; }},
-      h("option",{value:"all", selected: f.status==='all'}, "all"),
-      h("option",{value:"draft", selected: f.status==='draft'}, "draft"),
-      h("option",{value:"validated", selected: f.status==='validated'}, "validated")
-    );
-
-    const dateFrom = h("input",{type:"date", value: f.dateFrom||"", onchange: ()=>{ f.dateFrom = dateFrom.value; }});
-    const dateTo = h("input",{type:"date", value: f.dateTo||"", onchange: ()=>{ f.dateTo = dateTo.value; }});
-
-    const scoreMin = h("input",{type:"number", step:"0.01", placeholder:"0", value: f.scoreMin??"", onchange: ()=>{ f.scoreMin = scoreMin.value===''? null : Number(scoreMin.value); }});
-    const scoreMax = h("input",{type:"number", step:"0.01", placeholder:"100", value: f.scoreMax??"", onchange: ()=>{ f.scoreMax = scoreMax.value===''? null : Number(scoreMax.value); }});
-
-    const progMin = h("input",{type:"number", step:"1", placeholder:"0", value: f.progressMin??"", onchange: ()=>{ f.progressMin = progMin.value===''? null : Number(progMin.value); }});
-    const progMax = h("input",{type:"number", step:"1", placeholder:"100", value: f.progressMax??"", onchange: ()=>{ f.progressMax = progMax.value===''? null : Number(progMax.value); }});
-
-    const cvSel = h("input",{placeholder: dbData.version||'active', value: f.criteriaVersion||"", onchange: ()=>{ f.criteriaVersion = cvSel.value.trim(); }});
-
-    const onlyMismatch = h("input",{type:"checkbox", checked: !!f.onlyMismatch, onchange: ()=>{ f.onlyMismatch = onlyMismatch.checked; }});
-
-    const btnApply = h("button",{class:"btn btnPrimary", onclick: async()=>{ await loadAudits(); }}, t("adminRefresh"));
-    const btnReset = h("button",{class:"btn btn--ghost", onclick: async()=>{
-      state.q=''; search.value='';
-      state.filters = { facility: [], status: 'all', validated: null, dateFrom: '', dateTo: '', scoreMin: null, scoreMax: null, progressMin: null, progressMax: null, criteriaVersion: '', onlyMismatch: false };
-      state.selected.clear();
-      await loadAudits();
-    }}, t("reset"));
-
-    const filtersPanel = h("details",{class:"card", open:false},
-      h("summary",{}, t("adminFilters")),
-      h("div",{class:"hr"}),
-      h("div",{class:"grid", style:"gap:12px"},
-        h("div",{}, h("div",{class:"small muted"}, t("adminFilterFacility")), h("div",{class:"grid", style:"grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px"}, ...facilityChecks)),
-        h("div",{class:"grid", style:"grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px"},
-          h("div",{}, h("div",{class:"small muted"}, t("adminFilterStatus")), statusSel),
-          h("div",{}, h("div",{class:"small muted"}, t("adminFilterCriteriaVersion")), cvSel),
-          h("label",{class:"row small", style:"align-items:center; gap:10px"}, onlyMismatch, h("span",{}, t("adminFilterOnlyMismatch")))
-        ),
-        h("div",{class:"grid", style:"grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px"},
-          h("div",{}, h("div",{class:"small muted"}, t("adminFilterDateFrom")), dateFrom),
-          h("div",{}, h("div",{class:"small muted"}, t("adminFilterDateTo")), dateTo),
-          h("div",{}, h("div",{class:"small muted"}, t("adminFilterScoreMin")), scoreMin),
-          h("div",{}, h("div",{class:"small muted"}, t("adminFilterScoreMax")), scoreMax),
-          h("div",{}, h("div",{class:"small muted"}, t("adminFilterProgressMin")), progMin),
-          h("div",{}, h("div",{class:"small muted"}, t("adminFilterProgressMax")), progMax)
-        ),
-        h("div",{class:"row", style:"gap:10px; flex-wrap:wrap"}, btnApply, btnReset)
-      )
-    );
-
-    if (!state.audits.length){
-      list.append(h("div",{class:"small muted", style:"padding-top:10px"}, "—"));
-    } else {
-      for (const a of state.audits){
-        const title = a.site_name || a.audit_id;
-        const facilitiesTxt = (a.facilities||[]).join(", ") || "—";
-        const dateTxt = a.audit_date ? formatDateEU(a.audit_date) : formatDateEU(a.updated_at);
-        const scoreTxt = (typeof a.overall_score === 'number' || typeof a.overall_score === 'string') ? `${Number(a.overall_score).toFixed(2)}%` : "—";
-        const progTxt = (a.progress_pct!=null && a.progress_pct!==undefined) ? `${a.progress_pct}%` : "—";
-        const status = a.status || (a.validated ? 'validated' : 'draft');
-        const mismatch = (a.criteria_version && dbData.version && a.criteria_version !== dbData.version);
-
-        const chk = h("input",{type:"checkbox", checked: state.selected.has(a.id), onchange: ()=>{ if (chk.checked) state.selected.add(a.id); else state.selected.delete(a.id); }});
-
-        const actions = h("div",{class:"row", style:"gap:8px; justify-content:flex-end; flex-wrap:wrap"});
-
-        const btnJson = h("button",{class:"btn", onclick: async()=>{ try{ const row = await sbAdminGetAudit(a.user_id, a.audit_id); if (!row?.data) return; downloadText(`${t("exportFilenameBase")}_${(row.data.meta?.siteName||title).replaceAll(" ","_")}.json`, JSON.stringify(row.data,null,2), "application/json"); }catch(e){ showToast(String(e?.message||e)); }}}, t("adminDownloadJson"));
-
-        const btnExcel = h("button",{class:"btn", onclick: async()=>{ try{ const row = await sbAdminGetAudit(a.user_id, a.audit_id); if (!row?.data) return; const audit = row.data; const auditedFacilities = (audit.meta?.facilitiesAudited && audit.meta.facilitiesAudited.length) ? audit.meta.facilitiesAudited : (dbData.facilities || [...new Set((dbData.criteria||[]).map(c=>c.facility))].filter(Boolean).sort()); const criteria = (dbData.criteria||[]).filter(c=> !auditedFacilities.length || auditedFacilities.includes(c.facility)); const responses = audit.responses || {}; const missingCount = criteria.filter(c=> !answered(responses[c.id])).length; if (missingCount > 0){ showToast(t("auditNotValidated")); return; } const exp = buildAuditExportRows(criteria, responses, audit.meta); const xls = toExcelXml(exp.headers, exp.rows, "Audit"); const site = (audit.meta?.siteName || title).replaceAll(" ","_"); downloadText(`M3_Audit_${site}.xls`, xls, "application/vnd.ms-excel"); }catch(e){ showToast(String(e?.message||e)); }}}, t("adminDownloadExcel"));
-
-        const btnReport = h("button",{class:"btn", onclick: async()=>{ try{ const row = await sbAdminGetAudit(a.user_id, a.audit_id); if (!row?.data) return; const audit = row.data; const auditedFacilities = (audit.meta?.facilitiesAudited && audit.meta.facilitiesAudited.length) ? audit.meta.facilitiesAudited : (dbData.facilities || [...new Set((dbData.criteria||[]).map(c=>c.facility))].filter(Boolean).sort()); const criteria = (dbData.criteria||[]).filter(c=> !auditedFacilities.length || auditedFacilities.includes(c.facility)); const responses = audit.responses || {}; const overall = computeWeightedScore(criteria, responses); const byPillar = [...groupBy(criteria, c=> c.pillar).entries()].map(([pillar, list])=> ({ label: pillar, pct: computeWeightedScore(list, responses).pct, sub: `${list.filter(c=> answered(responses[c.id])).length}/${list.length}` })).sort((x,y)=> y.pct-x.pct); const byFacility = [...groupBy(criteria, c=> c.facility).entries()].map(([facility, list])=> ({ label: facility, pct: computeWeightedScore(list, responses).pct, sub: `${list.filter(c=> answered(responses[c.id])).length}/${list.length}` })).sort((x,y)=> y.pct-x.pct); const ncItems = criteria.filter(c=>{ const r=responses[c.id]; if(!r||r.na) return false; return Number(r.score)<=1; }).map(c=>({ c, r: responses[c.id], lvl: severityLabelFor(c), })); const html = buildReportHTML(audit, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities); const blob = new Blob([html], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(()=> URL.revokeObjectURL(url), 60_000); }catch(e){ showToast(String(e?.message||e)); }}}, t("adminPreviewReport"));
-
-        const btnShareLink = h("button",{class:"btn", onclick: async()=>{ try{ const link = await sbAdminCreateReportLink(a.user_id, a.audit_id); await navigator.clipboard.writeText(link.url); showToast(`${t("adminShareLink")}: copied`); }catch(e){ showToast(String(e?.message||e)); }}}, t("adminShareLink"));
-
-        const btnShareClient = h("button",{class:"btn", onclick: async()=>{ try{ const email = prompt(t('adminShareEmailPh') || 'client email'); if (!email) return; const name = prompt(t('adminShareNamePh') || 'name (optional)') || ''; await sbAdminShareAudit(a.id, email, name); showToast(t('adminShareSaved')); }catch(e){ showToast(String(e?.message||e)); }}}, t("adminShareToClient"));
-
-        actions.append(btnJson, btnExcel, btnReport, btnShareLink, btnShareClient);
-
-        list.append(
-          h("div",{class:"item"},
-            h("div",{class:"rowBetween"},
-              h("div",{class:"row", style:"align-items:flex-start; gap:12px"},
-                chk,
-                h("div",{},
-                  h("div",{class:"itemTitle"}, title),
-                  h("div",{class:"itemMeta"}, `${a.auditor_name || "—"} • ${facilitiesTxt} • ${dateTxt}`),
-                  h("div",{class:"row", style:"gap:8px; margin-top:6px; flex-wrap:wrap"},
-                    h("span",{class:"pill"}, `${status}`),
-                    h("span",{class:"pill"}, `${t('scoreLabel')}: ${scoreTxt}`),
-                    h("span",{class:"pill"}, `${t('completion')}: ${progTxt}`)
-                  ),
-                  mismatch ? h("div",{class:"small", style:"margin-top:6px"}, h("span",{class:"badge warn"}, t("adminVersionMismatch")), h("span",{class:"small muted", style:"margin-left:8px"}, `${a.criteria_version} → ${dbData.version}`)) : null
-                )
-              ),
-              actions
-            )
-          )
-        );
-      }
-    }
-
-    const header = h("div",{class:"card"},
-      h("div",{class:"rowBetween"},
-        h("div",{}, h("div",{class:"h2"}, t("adminAuditsTab")), h("div",{class:"small muted"}, `Global list • ${state.audits.length} audits • ${selectedCount} selected`)),
-        h("div",{class:"row", style:"gap:10px; flex-wrap:wrap"},
-          h("div",{class:"small muted"}, state.busy ? "…" : ""),
-          search,
-          refreshBtn
-        )
-      ),
-      h("div",{class:"hr"}),
-      filtersPanel,
-      h("div",{class:"hr"}),
-      h("div",{class:"row", style:"gap:10px; flex-wrap:wrap"}, btnSelectAll, btnClearSel, btnExportSelJson, btnExportFilJson, btnExportSelXls, btnBackfill),
-      h("div",{class:"hr"}),
-      list
-    );
-
-    async function exportAudits(kind, mode){
-      try{
-        const max = 50;
-        let rows = [];
-        if (mode === 'selected') rows = state.audits.filter(a => state.selected.has(a.id));
-        else rows = state.audits.slice();
-        if (!rows.length){ showToast('—'); return; }
-        if (rows.length > max){ showToast(`Too many (${rows.length}). Limit ${max}.`); rows = rows.slice(0, max); }
-
-        if (kind === 'json'){
-          const full = [];
-          for (const a of rows){
-            const row = await sbAdminGetAudit(a.user_id, a.audit_id);
-            if (row?.data) full.push({ audit_row_id: a.id, user_id: a.user_id, audit_id: a.audit_id, data: row.data });
-          }
-          downloadText(`M3_Audit_Export_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(full,null,2), 'application/json');
-          showToast(t('exported'));
-          return;
-        }
-
-        if (kind === 'excel'){
-          const sheets = [];
-          for (const a of rows){
-            const row = await sbAdminGetAudit(a.user_id, a.audit_id);
-            if (!row?.data) continue;
-            const audit = row.data;
-            const auditedFacilities = (audit.meta?.facilitiesAudited && audit.meta.facilitiesAudited.length) ? audit.meta.facilitiesAudited : (dbData.facilities || [...new Set((dbData.criteria||[]).map(c=>c.facility))].filter(Boolean).sort());
-            const criteria = (dbData.criteria||[]).filter(c=> !auditedFacilities.length || auditedFacilities.includes(c.facility));
-            const responses = audit.responses || {};
-            const exp = buildAuditExportRows(criteria, responses, audit.meta);
-
-            const base = (audit.meta?.siteName || a.site_name || a.audit_id || 'Audit').toString();
-            const clean = base.replace(/[:\/?*\[\]]/g,' ').trim();
-            let name = (clean || 'Audit').slice(0,31);
-            let k = 1;
-            while (sheets.some(s=> s.name === name)){
-              k += 1;
-              name = `${(clean || 'Audit').slice(0,28)}_${k}`.slice(0,31);
-            }
-            sheets.push({ name, headers: exp.headers, rows: exp.rows });
-          }
-          if (!sheets.length){ showToast('—'); return; }
-          const xls = toExcelXmlMulti(sheets);
-          downloadText(`M3_Audit_Batch_${new Date().toISOString().slice(0,10)}.xls`, xls, 'application/vnd.ms-excel');
-          showToast(t('exported'));
-          return;
-        }
-
-      }catch(e){ showToast(String(e?.message||e)); }
-    }
-
-    async function backfillMeta(){
-      try{
-        const sb = await initSupabase();
-        if (!sb) throw new Error('Supabase non configuré');
-        await sbRequireUser();
-        await ensureRoleLoaded();
-        if (AUTH.role !== 'admin') throw new Error('Forbidden');
-
-        const toProcess = state.audits.slice(0, 100);
-        for (const a of toProcess){
-          const got = await sbAdminGetAudit(a.user_id, a.audit_id);
-          if (!got?.data) continue;
-          const audit = got.data;
-          const auditedFacilities = Array.isArray(audit.meta?.facilitiesAudited) ? audit.meta.facilitiesAudited : [];
-          const crit = (dbData.criteria||[]).filter(c=> !auditedFacilities.length || auditedFacilities.includes(c.facility));
-          const responses = audit.responses || {};
-          const total = crit.length;
-          const done = crit.filter(c=> answered(responses[c.id])).length;
-          const progress = total ? Math.round((done/total)*100) : 0;
-          const validated = (total>0 && done===total);
-          const overall = computeWeightedScore(crit, responses);
-          const auditDate = (audit.meta?.createdAtISO || '').slice(0,10) || null;
-
-          const patch = { status: validated ? 'validated' : 'draft', validated, progress_pct: progress, overall_score: overall.pct, audit_date: auditDate };
-          const { error } = await sb.from('v8_audits').update(patch).eq('id', a.id);
-          if (error){ console.warn(error); }
-        }
-        showToast(t('saved'));
-        await loadAudits();
-      }catch(e){ showToast(String(e?.message||e)); }
-    }
-
-    // Note: exportAudits is implemented below (patched at end of function) - placeholder replaced after string injection.
-
-    return h("div",{class:"grid", style:"gap:14px"}, header);
-  }
-  function renderUsers(){
-    const list = h("div",{class:"list"});
-
-    for (const u of state.users){
-      const role = state.rolesById?.[u.id] || "auditor";
-      const roleSelect = h("select",{},
-        ...["admin","auditor","viewer"].map(r => h("option",{value:r, selected: r===role}, r))
-      );
-
-      const btnSetRole = h("button",{class:"btn", onclick: async()=>{
-        try{ await adminApi("setRole", { user_id: u.id, role: roleSelect.value }); await loadUsers(); showToast(t("saved")); }
-        catch(e){ showToast(String(e?.message||e)); }
-      }}, t("adminSetRole"));
-
-      const isDisabled = !!u.banned_until;
-      const btnToggle = h("button",{class:"btn btnDanger", onclick: async()=>{
-        try{ await adminApi(isDisabled ? "unbanUser" : "banUser", { user_id: u.id }); await loadUsers(); showToast(t("saved")); }
-        catch(e){ showToast(String(e?.message||e)); }
-      }}, isDisabled ? t("adminEnable") : t("adminDisable"));
-
-      list.append(
-        h("div",{class:"item"},
-          h("div",{class:"rowBetween"},
-            h("div",{},
-              h("div",{class:"itemTitle"}, u.email || u.phone || u.id),
-              h("div",{class:"itemMeta"}, `id: ${u.id} • created: ${formatDateEU(u.created_at)}${u.last_sign_in_at ? " • last: "+formatDateEU(u.last_sign_in_at):""}`)
-            ),
-            h("div",{class:"row", style:"justify-content:flex-end; gap:10px"},
-              roleSelect,
-              btnSetRole,
-              btnToggle
-            )
-          )
-        )
-      );
-    }
-
-    if (!state.users.length){
-      list.append(h("div",{class:"small muted", style:"padding-top:10px"}, "—"));
-    }
-
-    const inviteEmail = h("input",{placeholder:"name@domain.com"});
-    const inviteRole = h("select",{},
-      h("option",{value:"auditor", selected:true},"auditor"),
-      h("option",{value:"viewer"},"viewer"),
-      h("option",{value:"admin"},"admin")
-    );
-    const inviteSend = h("input",{type:"checkbox", checked:false});
-    const inviteLinkOut = h("input",{readonly:true, placeholder:"…"});
-
-    const copyBtn = h("button",{class:"btn", onclick: async()=>{
-      try{ await navigator.clipboard.writeText(inviteLinkOut.value || ""); showToast("copied"); }catch(_e){}
-    }}, t("adminCopy"));
-
-    const inviteBtn = h("button",{class:"btn btnPrimary", onclick: async()=>{
-      const email = inviteEmail.value.trim();
-      if (!email) return;
-      try{
-        const out = await adminApi("inviteUser", { email, role: inviteRole.value, send_email: inviteSend.checked });
-        inviteLinkOut.value = out.action_link || "";
-        showToast(t("saved"));
-        await loadUsers();
-      }catch(e){ showToast(String(e?.message||e)); }
-    }}, t("adminInvite"));
-
-    const inviteCard = h("details",{class:"card", open:false},
-      h("summary",{}, t("adminInvite")),
-      h("div",{class:"hr"}),
-      h("div",{class:"grid", style:"gap:12px"},
-        h("div",{}, h("div",{class:"small muted"}, t("adminInviteEmail")), inviteEmail),
-        h("div",{}, h("div",{class:"small muted"}, t("adminInviteRole")), inviteRole),
-        h("label",{class:"row small", style:"align-items:center; gap:10px"}, inviteSend, h("span",{}, t("adminInviteSendEmail"))),
-        h("div",{}, h("div",{class:"small muted"}, t("adminInviteLink")), h("div",{class:"row"}, inviteLinkOut, copyBtn)),
-        h("div",{class:"row"}, inviteBtn)
-      )
-    );
-
-    return h("div",{class:"grid", style:"gap:14px"},
-      h("div",{class:"card"},
-        h("div",{class:"rowBetween"},
-          h("div",{}, h("div",{class:"h2"}, t("adminUsersTab")), h("div",{class:"small muted"}, t("adminUsersIntro"))),
-          h("div",{class:"row"},
-            h("div",{class:"small muted"}, state.busy ? "…" : ""),
-            refreshBtn
-          )
-        ),
-        h("div",{class:"hr"}),
-        inviteCard,
-        h("div",{class:"hr"}),
-        list
-      )
-    );
-  }
-
-  function render(){
-    const activeAudits = state.tab === "audits";
-    tabAudits.classList.toggle("active", activeAudits);
-    tabUsers.classList.toggle("active", !activeAudits);
-    body.replaceChildren(
-      tabs,
-      state.tab === "audits" ? renderAudits() : renderUsers()
-    );
-  }
-
-  tabAudits.onclick = async()=>{ state.tab="audits"; render(); await loadAudits(); };
-  tabUsers.onclick = async()=>{ state.tab="users"; render(); await loadUsers(); };
-
-  setRoot(h("div",{},
-    topBar({title: t("adminConsole"), subtitle: "M3 Audit", right: h("a",{class:"btn", href:"#/"}, t("home"))}),
-    body
-  ));
-
-  render();
-  await loadAudits();
-}
-
 async function route(){
   updateFooter();
   const parts = parseHash();
@@ -3306,32 +2580,14 @@ async function route(){
   // Online mode: enforce login for everything else
   if (ONLINE_ENABLED){
     await refreshSession();
-    await ensureRoleLoaded();
-    if (!AUTH.session && parts[0] !== "login"){
+    if (!AUTH.session && !["login","forgot-password","update-password"].includes(parts[0])){
       return viewLogin();
     }
   }
 
-  // Viewer/client role: restrict navigation to the portal
-  if (ONLINE_ENABLED && AUTH.session && AUTH.role === 'viewer'){
-    const allowed = new Set(['portal','shared-report','login']);
-    const head = parts[0] || '';
-    if (!allowed.has(head)){
-      location.hash = '#/portal';
-      return viewPortal();
-    }
-  }
-
   if (parts[0] === "login") return viewLogin();
-  if (parts[0] === "portal"){
-    return viewPortal();
-  }
-
-  if (parts[0] === "shared-report"){
-    return viewSharedReport(parts[1]);
-  }
-
-  if (parts[0] === "admin") return viewAdmin();
+  if (parts[0] === "forgot-password") return viewForgotPassword();
+  if (parts[0] === "update-password") return viewUpdatePassword();
   if (parts.length === 0) return viewStart();
   if (parts[0] === "audit" && parts[1]) return viewAudit(parts[1]);
   if (parts[0] === "criterion" && parts[1] && parts[2]) return viewCriterion(parts[1], decodeURIComponent(parts[2]));
