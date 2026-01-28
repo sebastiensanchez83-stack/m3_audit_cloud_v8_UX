@@ -149,6 +149,30 @@ const I18N = {
     auditNotFoundTitle: "Audit introuvable",
     auditNotFoundBody: "Cet audit n’existe pas (ou a été supprimé).",
     updatedLabel: "Maj",
+
+admin: "Admin",
+adminConsole: "Console admin",
+adminAuditsTab: "Audits",
+adminUsersTab: "Utilisateurs",
+adminSearchPlaceholder: "Rechercher (site / auditeur / audit)…",
+adminRefresh: "Rafraîchir",
+adminForbidden: "Accès refusé (admin requis).",
+adminUsersIntro: "Gestion des comptes (invitations, rôles, activation).",
+adminInvite: "Inviter",
+adminInviteEmail: "Email",
+adminInviteRole: "Rôle",
+adminInviteSendEmail: "Envoyer l’email d’invitation",
+adminInviteLink: "Lien d’invitation",
+adminCopy: "Copier",
+adminDisable: "Désactiver",
+adminEnable: "Réactiver",
+adminSetRole: "Changer rôle",
+adminActions: "Actions",
+adminDownloadJson: "JSON",
+adminDownloadExcel: "Excel",
+adminPreviewReport: "Rapport",
+adminShareLink: "Lien public",
+adminVersionMismatch: "Version différente",
   },
   en: {
     appTitle: "M3 Smart Sustainable Standard - Audit Tool",
@@ -308,6 +332,30 @@ const I18N = {
     auditNotFoundTitle: "Audit not found",
     auditNotFoundBody: "This audit does not exist (or was deleted).",
     updatedLabel: "Updated",
+
+admin: "Admin",
+adminConsole: "Admin console",
+adminAuditsTab: "Audits",
+adminUsersTab: "Users",
+adminSearchPlaceholder: "Search (site / auditor / audit)…",
+adminRefresh: "Refresh",
+adminForbidden: "Forbidden (admin required).",
+adminUsersIntro: "User management (invites, roles, enable/disable).",
+adminInvite: "Invite",
+adminInviteEmail: "Email",
+adminInviteRole: "Role",
+adminInviteSendEmail: "Send invite email",
+adminInviteLink: "Invite link",
+adminCopy: "Copy",
+adminDisable: "Disable",
+adminEnable: "Enable",
+adminSetRole: "Change role",
+adminActions: "Actions",
+adminDownloadJson: "JSON",
+adminDownloadExcel: "Excel",
+adminPreviewReport: "Report",
+adminShareLink: "Public link",
+adminVersionMismatch: "Version mismatch",
   }
 };
 
@@ -426,44 +474,31 @@ function updateFooter(){
 }
 
 function topBar({title, subtitle, right}){
-  const langSel = h(
-    "select",
-    {
-      style: "min-width:86px",
-      onchange: (e)=> setLang(e.target.value)
-    },
-    h("option",{value:"fr"},"FR"),
-    h("option",{value:"en"},"EN")
-  );
-  langSel.value = LANG;
-  return h("div",{class:"topbar"},
-    h("div",{class:"topbar-inner"},
-      h("div",{class:"brandRow"},
-        h("img",{class:"brandLogo", src:"./assets/logo.png", alt:"M3"}),
-        h("div",{class:"brandText"},
-          h("div",{class:"brandTitle"}, title || t("appTitle")),
-          subtitle ? h("div",{class:"brandSub"}, subtitle) : h("div",{class:"brandSub"}, t("appSubtitle"))
-        )
-      ),
-      (function(){
-        const online = (typeof ONLINE_ENABLED !== "undefined" && ONLINE_ENABLED);
-        const authBtn = !online ? null : (AUTH && AUTH.user
-          ? h("button",{class:"btn btn--ghost", onclick: async ()=>{ await signOut(); showToast(t("signedOut")); go("#/login"); }}, t("signOut"))
-          : h("a",{class:"btn btn--ghost", href:"#/login"}, t("signIn"))
-        );
-        return h("div",{class:"topActions"}, langSel, right || h("div",{}), authBtn || h("div",{}));
-      })()
-    )
-  );
-}
+  const authBtn = ONLINE_ENABLED ? (
+    AUTH.session
+      ? h("button",{class:"btn", onclick: async()=>{ await signOut(); showToast(t("signedOut")); go("#/login"); }}, t("signOut"))
+      : h("a",{class:"btn", href:"#/login"}, t("login"))
+  ) : null;
 
-function uuid(){
-  if (crypto && crypto.randomUUID) return crypto.randomUUID();
-  // fallback
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c=>{
-    const r = Math.random()*16|0, v = c === "x" ? r : (r&0x3|0x8);
-    return v.toString(16);
-  });
+  const adminBtn = (ONLINE_ENABLED && AUTH.session && AUTH.role === "admin")
+    ? h("a",{class:"btn", href:"#/admin"}, t("admin"))
+    : null;
+
+  const actions = [];
+  if (adminBtn) actions.push(adminBtn);
+  if (right) actions.push(right);
+  if (authBtn) actions.push(authBtn);
+
+  return h("div",{class:"topbar"},
+    h("div",{class:"brandRow"},
+      h("img",{src:"./assets/logo.svg", class:"brandLogo", alt:"M3"}),
+      h("div",{class:"brandText"},
+        h("div",{class:"brandTitle"}, title || "M3 Audit Tool"),
+        subtitle ? h("div",{class:"brandSub"}, subtitle) : null
+      )
+    ),
+    h("div",{class:"topActions"}, ...actions)
+  );
 }
 
 /* ---------- IndexedDB ---------- */
@@ -537,7 +572,7 @@ const REPORT_TTL_DAYS = Number.parseInt(ENV.REPORT_LINK_DEFAULT_TTL_DAYS || "90"
 const ONLINE_ENABLED = !!(SUPABASE_URL && SUPABASE_ANON_KEY && typeof window !== 'undefined' && window.supabase && window.supabase.createClient);
 
 let SB = null;
-let AUTH = { session: null, user: null };
+let AUTH = { session: null, user: null, role: null, roleLoadedAt: 0 };
 
 async function initSupabase(){
   if (!ONLINE_ENABLED) return null;
@@ -553,6 +588,8 @@ async function initSupabase(){
   SB.auth.onAuthStateChange((_event, session)=>{
     AUTH.session = session;
     AUTH.user = session?.user || null;
+    AUTH.role = null;
+    AUTH.roleLoadedAt = 0;
     // If user signs out, bounce to login (unless on public report)
     const parts = parseHash();
     if (!session && parts[0] !== 'public'){
@@ -573,6 +610,29 @@ async function refreshSession(){
   AUTH.session = data.session;
   AUTH.user = data.session?.user || null;
   return data.session;
+}
+
+async function ensureRoleLoaded(force=false){
+  if (!ONLINE_ENABLED) return null;
+  if (!AUTH.session?.user) { AUTH.role = null; AUTH.roleLoadedAt = 0; return null; }
+  if (!force && AUTH.role && AUTH.roleLoadedAt && (Date.now() - AUTH.roleLoadedAt) < 60_000){
+    return AUTH.role;
+  }
+  try{
+    const sb = await initSupabase();
+    const { data, error } = await sb
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', AUTH.session.user.id)
+      .maybeSingle();
+    if (error) throw error;
+    AUTH.role = data?.role || 'auditor';
+  }catch(_e){
+    // If user_roles isn't installed yet, default to non-admin
+    AUTH.role = AUTH.role || 'auditor';
+  }
+  AUTH.roleLoadedAt = Date.now();
+  return AUTH.role;
 }
 
 async function signInWithEmail(email, password){
@@ -704,6 +764,82 @@ async function sbGetPublicReport(token){
   if (error) throw error;
   return data || null;
 }
+
+// ---- Admin API (Netlify Functions) ----
+async function adminApi(action, payload){
+  if (!ONLINE_ENABLED) throw new Error("Online mode only");
+  const session = await refreshSession();
+  if (!session?.access_token) throw new Error(t("mustLogin"));
+  const res = await fetch(`/.netlify/functions/admin-users?action=${encodeURIComponent(action)}`, {
+    method: payload ? "POST" : "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${session.access_token}`
+    },
+    body: payload ? JSON.stringify(payload) : undefined
+  });
+  const txt = await res.text();
+  let data;
+  try{ data = txt ? JSON.parse(txt) : null; }catch(_e){ data = { raw: txt }; }
+  if (!res.ok){
+    const msg = (data && (data.error || data.message)) ? (data.error || data.message) : txt;
+    throw new Error(msg || `HTTP ${res.status}`);
+  }
+  return data;
+}
+
+// ---- Admin DB operations (Supabase, RLS-protected by is_admin()) ----
+async function sbAdminListAudits(searchTerm){
+  const sb = await initSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  await sbRequireUser();
+  let q = sb
+    .from('v8_audits')
+    .select('user_id, audit_id, site_name, auditor_name, facilities, criteria_version, updated_at, created_at')
+    .order('updated_at', { ascending: false })
+    .limit(150);
+
+  const term = (searchTerm || '').trim();
+  if (term){
+    const esc = term.replaceAll(',', ' ').replaceAll('(', ' ').replaceAll(')', ' ');
+    q = q.or(`site_name.ilike.%${esc}%,auditor_name.ilike.%${esc}%,audit_id.ilike.%${esc}%`);
+  }
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+}
+
+async function sbAdminGetAudit(userId, auditId){
+  const sb = await initSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  await sbRequireUser();
+  const { data, error } = await sb
+    .from('v8_audits')
+    .select('data, criteria_version, site_name, auditor_name, facilities, updated_at, created_at')
+    .eq('user_id', userId)
+    .eq('audit_id', auditId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function sbAdminCreateReportLink(userId, auditId){
+  const sb = await initSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  await sbRequireUser();
+  const ttl = Number.isFinite(REPORT_TTL_DAYS) ? REPORT_TTL_DAYS : 90;
+  const expires = new Date(Date.now() + ttl * 24 * 3600 * 1000);
+  const token = uuid();
+  const { error } = await sb
+    .from('v8_report_links')
+    .insert({ token, user_id: userId, audit_id: auditId, expires_at: expires.toISOString() });
+  if (error) throw error;
+  const base = APP_URL || (location.origin + location.pathname.replace(/\/[^\/]*$/, '/') );
+  return { token, url: `${base}#/public/${token}`, expiresAtISO: expires.toISOString() };
+}
+
+
 
 
 async function sbUploadPhoto(auditId, criterionId, photoId, dataUrl){
@@ -2350,6 +2486,318 @@ function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncI
 </body></html>`;
 }
 
+async function viewAdmin(){
+  if (!ONLINE_ENABLED){
+    return viewStart();
+  }
+  await initSupabase();
+  await refreshSession();
+  await ensureRoleLoaded(true);
+
+  if (AUTH.role !== "admin"){
+    return setRoot(h("div",{},
+      topBar({title: t("adminConsole"), subtitle: t("adminForbidden"), right: h("a",{class:"btn", href:"#/"}, t("home"))}),
+      h("div",{class:"wrap"},
+        h("div",{class:"card"},
+          h("div",{class:"h2"}, t("adminForbidden")),
+          h("div",{class:"small muted", style:"margin-top:6px"}, "Tip: add your user UUID to public.user_roles as role='admin'.")
+        )
+      )
+    ));
+  }
+
+  const dbData = await loadCriteriaDB();
+  const body = h("div",{class:"wrap"});
+  const tabs = h("div",{class:"tabs"});
+  const tabAudits = h("div",{class:"tab active"}, t("adminAuditsTab"));
+  const tabUsers = h("div",{class:"tab"}, t("adminUsersTab"));
+  tabs.append(tabAudits, tabUsers);
+
+  const state = {
+    tab: "audits",
+    q: "",
+    audits: [],
+    users: [],
+    rolesById: {},
+    busy: false
+  };
+
+  const search = h("input",{placeholder: t("adminSearchPlaceholder")});
+  const refreshBtn = h("button",{class:"btn", onclick: async()=>{ await loadCurrent(); }}, t("adminRefresh"));
+
+  search.addEventListener("input", ()=>{ state.q = search.value; });
+
+  async function loadAudits(){
+    state.busy = true; render();
+    try{ state.audits = await sbAdminListAudits(state.q); }
+    catch(e){ showToast(String(e?.message||e)); }
+    finally{ state.busy = false; render(); }
+  }
+
+  async function loadUsers(){
+    state.busy = true; render();
+    try{
+      const data = await adminApi("listUsers");
+      state.users = data.users || [];
+      state.rolesById = data.rolesById || {};
+    }catch(e){ showToast(String(e?.message||e)); }
+    finally{ state.busy = false; render(); }
+  }
+
+  async function loadCurrent(){
+    if (state.tab === "audits") return loadAudits();
+    return loadUsers();
+  }
+
+  function renderAudits(){
+    const list = h("div",{class:"list"});
+    if (!state.audits.length){
+      list.append(h("div",{class:"small muted", style:"padding-top:10px"}, "—"));
+    } else {
+      for (const a of state.audits){
+        const title = a.site_name || a.audit_id;
+        const meta = `${a.auditor_name || "—"} • ${(a.facilities||[]).join(", ") || "—"} • ${formatDateEU(a.updated_at)}`;
+        const mismatch = (a.criteria_version && dbData.version && a.criteria_version !== dbData.version);
+
+        const actions = h("div",{class:"row", style:"gap:8px; justify-content:flex-end"});
+
+        const btnJson = h("button",{class:"btn", onclick: async()=>{
+          try{
+            const row = await sbAdminGetAudit(a.user_id, a.audit_id);
+            if (!row?.data) return;
+            downloadText(`${t("exportFilenameBase")}_${(row.data.meta?.siteName||title).replaceAll(" ","_")}.json`, JSON.stringify(row.data,null,2), "application/json");
+          }catch(e){ showToast(String(e?.message||e)); }
+        }}, t("adminDownloadJson"));
+
+const btnExcel = h("button",{class:"btn", onclick: async()=>{
+  try{
+    const row = await sbAdminGetAudit(a.user_id, a.audit_id);
+    if (!row?.data) return;
+    const audit = row.data;
+
+    const auditedFacilities = (audit.meta?.facilitiesAudited && audit.meta.facilitiesAudited.length)
+      ? audit.meta.facilitiesAudited
+      : (dbData.facilities || [...new Set((dbData.criteria||[]).map(c=>c.facility))].filter(Boolean).sort());
+
+    const criteria = (dbData.criteria||[]).filter(c=> !auditedFacilities.length || auditedFacilities.includes(c.facility));
+    const responses = audit.responses || {};
+
+    const missingCount = criteria.filter(c=> !answered(responses[c.id])).length;
+    if (missingCount > 0){
+      showToast(t("auditNotValidated"));
+      return;
+    }
+
+    const exp = buildAuditExportRows(criteria, responses, audit.meta);
+    const xls = toExcelXml(exp.headers, exp.rows, "Audit");
+    const site = (audit.meta?.siteName || title).replaceAll(" ","_");
+    downloadText(`M3_Audit_${site}.xls`, xls, "application/vnd.ms-excel");
+  }catch(e){ showToast(String(e?.message||e)); }
+}}, t("adminDownloadExcel"));
+
+const btnReport = h("button",{class:"btn", onclick: async()=>{
+  try{
+    const row = await sbAdminGetAudit(a.user_id, a.audit_id);
+    if (!row?.data) return;
+    const audit = row.data;
+
+    const auditedFacilities = (audit.meta?.facilitiesAudited && audit.meta.facilitiesAudited.length)
+      ? audit.meta.facilitiesAudited
+      : (dbData.facilities || [...new Set((dbData.criteria||[]).map(c=>c.facility))].filter(Boolean).sort());
+
+    const criteria = (dbData.criteria||[]).filter(c=> !auditedFacilities.length || auditedFacilities.includes(c.facility));
+    const responses = audit.responses || {};
+
+    const overall = computeWeightedScore(criteria, responses);
+
+    const byPillar = [...groupBy(criteria, c=> c.pillar).entries()].map(([pillar, list])=> ({
+      pillar,
+      score: computeWeightedScore(list, responses),
+      done: list.filter(c=> answered(responses[c.id])).length,
+      total: list.length,
+    })).sort((a,b)=> b.score - a.score);
+
+    const byFacility = [...groupBy(criteria, c=> c.facility).entries()].map(([facility, list])=> ({
+      facility,
+      score: computeWeightedScore(list, responses),
+      done: list.filter(c=> answered(responses[c.id])).length,
+      total: list.length,
+    })).sort((a,b)=> b.score - a.score);
+
+    const ncItems = criteria
+      .filter(c=> {
+        const r = responses[c.id];
+        if (!r || r.na) return false;
+        return Number(r.score) <= 1;
+      })
+      .map(c=> ({ id: c.id, ref: c.ref, title: c.title, pillar: c.pillar, facility: c.facility, score: responses[c.id]?.score ?? null }))
+      .sort((a,b)=> (a.pillar||'').localeCompare(b.pillar||'') || (a.facility||'').localeCompare(b.facility||''));
+
+    const html = buildReportHTML(audit, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities);
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(()=> URL.revokeObjectURL(url), 60_000);
+  }catch(e){ showToast(String(e?.message||e)); }
+}}, t("adminPreviewReport"));
+
+        const btnShare = h("button",{class:"btn", onclick: async()=>{
+          try{
+            const link = await sbAdminCreateReportLink(a.user_id, a.audit_id);
+            await navigator.clipboard.writeText(link.url);
+            showToast(`${t("adminShareLink")}: copied`);
+          }catch(e){ showToast(String(e?.message||e)); }
+        }}, t("adminShareLink"));
+
+        actions.append(btnJson, btnExcel, btnReport, btnShare);
+
+        list.append(
+          h("div",{class:"item"},
+            h("div",{class:"rowBetween"},
+              h("div",{},
+                h("div",{class:"itemTitle"}, title),
+                h("div",{class:"itemMeta"}, meta),
+                mismatch ? h("div",{class:"small", style:"margin-top:6px"}, h("span",{class:"badge warn"}, t("adminVersionMismatch")), h("span",{class:"small muted", style:"margin-left:8px"}, `${a.criteria_version} → ${dbData.version}`)) : null
+              ),
+              actions
+            )
+          )
+        );
+      }
+    }
+
+    return h("div",{class:"grid", style:"gap:14px"},
+      h("div",{class:"card"},
+        h("div",{class:"rowBetween"},
+          h("div",{}, h("div",{class:"h2"}, t("adminAuditsTab")), h("div",{class:"small muted"}, "Liste globale (admin)")),
+          h("div",{class:"row", style:"gap:10px"},
+            h("div",{class:"small muted"}, state.busy ? "…" : ""),
+            search,
+            refreshBtn
+          )
+        ),
+        h("div",{class:"hr"}),
+        list
+      )
+    );
+  }
+
+  function renderUsers(){
+    const list = h("div",{class:"list"});
+
+    for (const u of state.users){
+      const role = state.rolesById?.[u.id] || "auditor";
+      const roleSelect = h("select",{},
+        ...["admin","auditor","viewer"].map(r => h("option",{value:r, selected: r===role}, r))
+      );
+
+      const btnSetRole = h("button",{class:"btn", onclick: async()=>{
+        try{ await adminApi("setRole", { user_id: u.id, role: roleSelect.value }); await loadUsers(); showToast(t("saved")); }
+        catch(e){ showToast(String(e?.message||e)); }
+      }}, t("adminSetRole"));
+
+      const isDisabled = !!u.banned_until;
+      const btnToggle = h("button",{class:"btn btnDanger", onclick: async()=>{
+        try{ await adminApi(isDisabled ? "unbanUser" : "banUser", { user_id: u.id }); await loadUsers(); showToast(t("saved")); }
+        catch(e){ showToast(String(e?.message||e)); }
+      }}, isDisabled ? t("adminEnable") : t("adminDisable"));
+
+      list.append(
+        h("div",{class:"item"},
+          h("div",{class:"rowBetween"},
+            h("div",{},
+              h("div",{class:"itemTitle"}, u.email || u.phone || u.id),
+              h("div",{class:"itemMeta"}, `id: ${u.id} • created: ${formatDateEU(u.created_at)}${u.last_sign_in_at ? " • last: "+formatDateEU(u.last_sign_in_at):""}`)
+            ),
+            h("div",{class:"row", style:"justify-content:flex-end; gap:10px"},
+              roleSelect,
+              btnSetRole,
+              btnToggle
+            )
+          )
+        )
+      );
+    }
+
+    if (!state.users.length){
+      list.append(h("div",{class:"small muted", style:"padding-top:10px"}, "—"));
+    }
+
+    const inviteEmail = h("input",{placeholder:"name@domain.com"});
+    const inviteRole = h("select",{},
+      h("option",{value:"auditor", selected:true},"auditor"),
+      h("option",{value:"viewer"},"viewer"),
+      h("option",{value:"admin"},"admin")
+    );
+    const inviteSend = h("input",{type:"checkbox", checked:false});
+    const inviteLinkOut = h("input",{readonly:true, placeholder:"…"});
+
+    const copyBtn = h("button",{class:"btn", onclick: async()=>{
+      try{ await navigator.clipboard.writeText(inviteLinkOut.value || ""); showToast("copied"); }catch(_e){}
+    }}, t("adminCopy"));
+
+    const inviteBtn = h("button",{class:"btn btnPrimary", onclick: async()=>{
+      const email = inviteEmail.value.trim();
+      if (!email) return;
+      try{
+        const out = await adminApi("inviteUser", { email, role: inviteRole.value, send_email: inviteSend.checked });
+        inviteLinkOut.value = out.action_link || "";
+        showToast(t("saved"));
+        await loadUsers();
+      }catch(e){ showToast(String(e?.message||e)); }
+    }}, t("adminInvite"));
+
+    const inviteCard = h("details",{class:"card", open:false},
+      h("summary",{}, t("adminInvite")),
+      h("div",{class:"hr"}),
+      h("div",{class:"grid", style:"gap:12px"},
+        h("div",{}, h("div",{class:"small muted"}, t("adminInviteEmail")), inviteEmail),
+        h("div",{}, h("div",{class:"small muted"}, t("adminInviteRole")), inviteRole),
+        h("label",{class:"row small", style:"align-items:center; gap:10px"}, inviteSend, h("span",{}, t("adminInviteSendEmail"))),
+        h("div",{}, h("div",{class:"small muted"}, t("adminInviteLink")), h("div",{class:"row"}, inviteLinkOut, copyBtn)),
+        h("div",{class:"row"}, inviteBtn)
+      )
+    );
+
+    return h("div",{class:"grid", style:"gap:14px"},
+      h("div",{class:"card"},
+        h("div",{class:"rowBetween"},
+          h("div",{}, h("div",{class:"h2"}, t("adminUsersTab")), h("div",{class:"small muted"}, t("adminUsersIntro"))),
+          h("div",{class:"row"},
+            h("div",{class:"small muted"}, state.busy ? "…" : ""),
+            refreshBtn
+          )
+        ),
+        h("div",{class:"hr"}),
+        inviteCard,
+        h("div",{class:"hr"}),
+        list
+      )
+    );
+  }
+
+  function render(){
+    const activeAudits = state.tab === "audits";
+    tabAudits.classList.toggle("active", activeAudits);
+    tabUsers.classList.toggle("active", !activeAudits);
+    body.replaceChildren(
+      tabs,
+      state.tab === "audits" ? renderAudits() : renderUsers()
+    );
+  }
+
+  tabAudits.onclick = async()=>{ state.tab="audits"; render(); await loadAudits(); };
+  tabUsers.onclick = async()=>{ state.tab="users"; render(); await loadUsers(); };
+
+  setRoot(h("div",{},
+    topBar({title: t("adminConsole"), subtitle: "M3 Audit", right: h("a",{class:"btn", href:"#/"}, t("home"))}),
+    body
+  ));
+
+  render();
+  await loadAudits();
+}
+
 async function route(){
   updateFooter();
   const parts = parseHash();
@@ -2362,12 +2810,14 @@ async function route(){
   // Online mode: enforce login for everything else
   if (ONLINE_ENABLED){
     await refreshSession();
+    await ensureRoleLoaded();
     if (!AUTH.session && parts[0] !== "login"){
       return viewLogin();
     }
   }
 
   if (parts[0] === "login") return viewLogin();
+  if (parts[0] === "admin") return viewAdmin();
   if (parts.length === 0) return viewStart();
   if (parts[0] === "audit" && parts[1]) return viewAudit(parts[1]);
   if (parts[0] === "criterion" && parts[1] && parts[2]) return viewCriterion(parts[1], decodeURIComponent(parts[2]));
