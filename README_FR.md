@@ -6,6 +6,8 @@ Cette version **garde l'UX V8 originale** (standalone), mais ajoute :
 - Liens **publics** de rapport (TTL) : `#/public/<token>`
 - Photos dans Supabase Storage (bucket `audit-photos`) avec URLs publiques
 
+
+> ⚠️ **Important** : si tu actives l’interface **Admin** / **Portail client**, tu dois exécuter **en plus** `supabase/admin-rls.sql` puis `supabase/portal.sql`. Sans `portal.sql`, les colonnes meta (status/progress/score/date) manquent et certaines fonctions (filtres/partage) ne peuvent pas fonctionner.
 ---
 
 ## Setup Supabase (obligatoire pour le mode en ligne)
@@ -57,6 +59,61 @@ Dans Netlify → Site settings → Environment variables :
 - `REPORT_LINK_DEFAULT_TTL_DAYS` = `90` (ou autre)
 
 Build : `npm run build` (génère `env.js`), Publish : `.`
+
+---
+
+## Admin (console, export global, gestion utilisateurs)
+
+Cette version inclut une route **`#/admin`** (visible uniquement si ton rôle = `admin`).
+
+### 1) SQL à appliquer
+Dans Supabase Studio → SQL Editor : exécute **`supabase/admin-rls.sql`**.
+Ça ajoute :
+- table `public.user_roles`
+- fonction `public.is_admin()`
+- policies RLS étendues sur `v8_audits` et `v8_report_links`
+
+### 2) Définir le premier admin (bootstrap)
+Dans Supabase Studio → Auth → Users, récupère ton **UUID** puis exécute :
+```sql
+insert into public.user_roles (user_id, role) values ('<TON_UUID>', 'admin')
+on conflict (user_id) do update set role = 'admin';
+```
+
+### 3) Variable d'environnement Netlify (obligatoire pour la gestion des comptes)
+Ajoute aussi dans Netlify :
+- `SUPABASE_SERVICE_ROLE_KEY` (clé **service_role**)
+
+La console admin s'appuie sur une Netlify Function (`netlify/functions/admin-users.cjs`) qui **ne met jamais** la clé service_role côté navigateur.
+
+### Ce que tu peux faire dans `#/admin`
+- Lister tous les audits (tous utilisateurs)
+- Générer/exporter JSON, Excel, prévisualiser le rapport, créer un lien public
+- Inviter des utilisateurs + définir le rôle (`admin` / `auditor` / `viewer`)
+- Désactiver/réactiver un compte
+
+
+---
+
+## Portail client (partage d'audits)
+
+Cette version ajoute un **portail client** (rôle `viewer`) : **`#/portal`**.
+
+### 1) SQL à appliquer
+Dans Supabase Studio → SQL Editor : exécute **`supabase/portal.sql`**.
+Ça ajoute :
+- colonnes meta supplémentaires sur `v8_audits` (statut, complétion, score, date)
+- table `public.v8_audit_shares` (partage par email)
+- policy de lecture des audits partagés (lecture seule)
+
+### 2) Process
+1. Dans `#/admin` → **Users** : invite le client, mets son rôle à `viewer`.
+2. Dans `#/admin` → **Audits** : sur un audit, clique **Partager au client** et saisis l'email du client.
+3. Le client se connecte, puis va sur **`#/portal`** pour voir ses rapports.
+
+Notes :
+- Les comptes `viewer` sont **bloqués** sur le portail (pas d'édition d'audit).
+- Tu peux aussi continuer à utiliser des liens publics de rapport (`#/public/<token>`).
 
 ---
 
