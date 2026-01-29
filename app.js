@@ -659,17 +659,32 @@ const ONLINE_ENABLED = !!(SUPABASE_URL && SUPABASE_ANON_KEY && typeof window !==
 let SB = null;
 let AUTH = { session: null, user: null, isAdmin: false, _adminCheckedFor: null };
 
-async function refreshAdminFlag() {
+async function refreshAdminFlag(force=false) {
   if (!ONLINE_ENABLED) { AUTH.isAdmin = false; return false; }
   if (!AUTH.user) { AUTH.isAdmin = false; AUTH._adminCheckedFor = null; return false; }
-  if (AUTH._adminCheckedFor === AUTH.user.id) return AUTH.isAdmin;
+  if (!force && AUTH._adminCheckedFor === AUTH.user.id) return AUTH.isAdmin;
   AUTH._adminCheckedFor = AUTH.user.id;
+
+  // Preferred: RPC (avoids RLS/policy headaches)
+  try {
+    const sb = await initSupabase();
+    const { data, error } = await sb.rpc('get_v8_my_role');
+    if (!error) {
+      const role = (typeof data === 'string' ? data : (data && (data.role || data.value))) || '';
+      AUTH.isAdmin = String(role).toLowerCase() === 'admin';
+      return AUTH.isAdmin;
+    }
+  } catch (_e) {
+    // ignore
+  }
+
+  // Fallback: direct table lookup (requires SELECT RLS on v8_admins)
   try {
     const sb = await initSupabase();
     const { data, error } = await sb
-      .from("v8_admins")
-      .select("user_id")
-      .eq("user_id", AUTH.user.id)
+      .from('v8_admins')
+      .select('user_id')
+      .eq('user_id', AUTH.user.id)
       .maybeSingle();
     if (error) throw error;
     AUTH.isAdmin = !!data;
@@ -771,8 +786,11 @@ async function sbUpsertAudit(audit){
 
   const facilities = (audit.meta && Array.isArray(audit.meta.facilitiesAudited)) ? audit.meta.facilitiesAudited : [];
 
+  const ownerId = (AUTH.isAdmin && audit.__ownerUserId) ? audit.__ownerUserId : user.id;
+  audit.__ownerUserId = ownerId;
+
   const payload = {
-    user_id: user.id,
+    user_id: ownerId,
     audit_id: audit.auditId,
     site_name: audit.meta?.siteName || null,
     auditor_name: audit.meta?.auditorName || null,
@@ -792,12 +810,14 @@ async function sbGetAudit(auditId){
   const user = await sbRequireUser();
   await refreshAdminFlag();
 
-  let q = sb.from("v8_audits").select("data").eq("audit_id", auditId);
+  let q = sb.from("v8_audits").select("data,user_id").eq("audit_id", auditId);
   if (!AUTH.isAdmin) q = q.eq("user_id", user.id);
 
   const { data, error } = await q.maybeSingle();
   if (error) throw error;
-  return data?.data || null;
+  const audit = data?.data || null;
+  if (audit && data?.user_id) audit.__ownerUserId = data.user_id;
+  return audit;
 }
 
 async function sbListAudits(){
@@ -863,12 +883,13 @@ async function sbGetPublicReport(token){
 }
 
 
-async function sbUploadPhoto(auditId, criterionId, photoId, dataUrl){
+async function sbUploadPhoto(auditId, criterionId, photoId, dataUrl, ownerUserId=null){
   const sb = await initSupabase();
   const user = AUTH.user || (await sb.auth.getUser()).data.user;
   if (!user) throw new Error('Not authenticated');
   const ext = 'jpg';
-  const filePath = `${user.id}/${auditId}/${criterionId}/${photoId}.${ext}`;
+  const ownerId = ownerUserId || user.id;
+  const filePath = `${ownerId}/${auditId}/${criterionId}/${photoId}.${ext}`;
   const blob = dataUrlToBlob(dataUrl);
   const { error } = await sb.storage
     .from(SUPABASE_BUCKET)
@@ -2068,7 +2089,7 @@ async function viewCriterion(auditId, criterionId){
 
     let photoUrl = null;
     if (ONLINE_ENABLED){
-      try{ photoUrl = await sbUploadPhoto(auditId, c.id, photoId, dataUrl); }catch(e){ photoUrl = null; }
+      try{ photoUrl = await sbUploadPhoto(auditId, c.id, photoId, dataUrl, row.__ownerUserId); }catch(e){ photoUrl = null; }
     }
 
     const next = {...row};
