@@ -56,6 +56,16 @@ const I18N = {
     signedOut: "Déconnecté",
     mustLogin: "Vous devez être connecté.",
     roleAdmin: "Admin",
+    adminPanel: "Administration",
+    adminPanelHelp: "Invitations et gestion des accès.",
+    inviteUserTitle: "Inviter un utilisateur",
+    inviteEmailPh: "Email (ex: user@domaine.com)",
+    inviteRole: "Rôle",
+    sendInvite: "Envoyer invitation",
+    sendingInvite: "Envoi…",
+    inviteSent: "Invitation envoyée.",
+    inviteFailed: "Invitation impossible.",
+    invalidEmail: "Email invalide.",
     roleAuditor: "Auditeur",
     ownerLabel: "Propriétaire",
     allUsers: "tous utilisateurs",
@@ -220,6 +230,16 @@ const I18N = {
     signedOut: "Signed out",
     mustLogin: "You must be signed in.",
     roleAdmin: "Admin",
+    adminPanel: "Administration",
+    adminPanelHelp: "Invites and access management.",
+    inviteUserTitle: "Invite a user",
+    inviteEmailPh: "Email (e.g. user@domain.com)",
+    inviteRole: "Role",
+    sendInvite: "Send invite",
+    sendingInvite: "Sending…",
+    inviteSent: "Invite sent.",
+    inviteFailed: "Invite failed.",
+    invalidEmail: "Invalid email.",
     roleAuditor: "Auditor",
     ownerLabel: "Owner",
     allUsers: "all users",
@@ -707,6 +727,24 @@ async function refreshAdminFlag(force=false) {
   AUTH.isAdmin = false;
   return false;
 }
+
+async function inviteUserByEmail(email, role){
+  if (!ONLINE_ENABLED) throw new Error("Offline");
+  if (!AUTH.session?.access_token) throw new Error("No session");
+  const res = await fetch("/.netlify/functions/invite-user", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + AUTH.session.access_token
+    },
+    body: JSON.stringify({ email, role })
+  });
+  let data = {};
+  try{ data = await res.json(); }catch(_){}
+  if (!res.ok) throw new Error(data.error || (`HTTP ${res.status}`));
+  return data;
+}
+
 
 
 async function initSupabase(){
@@ -1441,6 +1479,42 @@ async function viewStart(){
     go(`#/audit/${data.auditId}`);
   }}, t("importAuditProject"));
 
+
+  let adminInvite = null;
+  if (ONLINE_ENABLED && AUTH.isAdmin){
+    const emailIn = h("input",{type:"email", placeholder: t("inviteEmailPh"), style:"flex:2; min-width:240px"});
+    const roleSel = h("select",{style:"flex:1; min-width:160px"},
+      h("option",{value:"auditor"}, t("roleAuditor")),
+      h("option",{value:"admin"}, t("roleAdmin"))
+    );
+    const inviteBtn = h("button",{class:"primary", onclick: async ()=>{
+      const email = String(emailIn.value||"").trim();
+      const role = String(roleSel.value||"auditor");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ showToast(t("invalidEmail")); return; }
+      const prev = inviteBtn.textContent;
+      inviteBtn.disabled = true;
+      inviteBtn.textContent = t("sendingInvite");
+      try{
+        await inviteUserByEmail(email, role);
+        showToast(t("inviteSent"));
+        emailIn.value = "";
+      }catch(e){
+        showToast(t("inviteFailed") + " — " + (e?.message||e));
+      }finally{
+        inviteBtn.disabled = false;
+        inviteBtn.textContent = prev;
+      }
+    }}, t("sendInvite"));
+
+    adminInvite = h("div",{style:"margin-top:12px"},
+      h("div",{class:"hr"}),
+      h("div",{class:"h3"}, t("adminPanel")),
+      h("div",{class:"small muted"}, t("adminPanelHelp")),
+      h("div",{class:"h3", style:"margin-top:10px"}, t("inviteUserTitle")),
+      h("div",{class:"row", style:"gap:8px; flex-wrap:wrap; margin-top:6px"}, emailIn, roleSel, inviteBtn)
+    );
+  }
+
   const auditList = h("div",{class:"card"},
     h("div",{class:"row-between"},
       h("div",{class:"h3"}, t("auditsExisting")),
@@ -1466,7 +1540,8 @@ async function viewStart(){
           )
         );
       })
-    ) : h("div",{class:"small muted", style:"margin-top:8px"}, t("noAuditYet"))
+    ) : h("div",{class:"small muted", style:"margin-top:8px"}, t("noAuditYet")),
+    adminInvite
   );
 
   const root = h("div",{},
@@ -2707,5 +2782,8 @@ try {
     listAudits: ()=>dbListAudits(),
     getAudit: (id)=>dbGetAudit(id),
   };
+  window.SB = SB;
+  window.AUTH = AUTH;
+  window.ONLINE_ENABLED = ONLINE_ENABLED;
 } catch(_e) {}
 
