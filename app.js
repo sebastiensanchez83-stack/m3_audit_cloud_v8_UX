@@ -665,33 +665,47 @@ async function refreshAdminFlag(force=false) {
   if (!force && AUTH._adminCheckedFor === AUTH.user.id) return AUTH.isAdmin;
   AUTH._adminCheckedFor = AUTH.user.id;
 
-  // Preferred: RPC (avoids RLS/policy headaches)
+  const sb = await initSupabase();
+
+  // 1) Best: boolean RPC (robust even if v8_admins uses non-standard column names)
   try {
-    const sb = await initSupabase();
+    const { data, error } = await sb.rpc('v8_is_admin');
+    if (!error) {
+      if (typeof data === 'boolean') {
+        AUTH.isAdmin = data;
+        return AUTH.isAdmin;
+      }
+      if (data && typeof data === 'object') {
+        const v = data.v8_is_admin ?? data.is_admin ?? data.value ?? data.result;
+        if (typeof v === 'boolean') {
+          AUTH.isAdmin = v;
+          return AUTH.isAdmin;
+        }
+      }
+    }
+  } catch (_e) {}
+
+  // 2) Role RPC (older patch)
+  try {
     const { data, error } = await sb.rpc('get_v8_my_role');
     if (!error) {
       const role = (typeof data === 'string' ? data : (data && (data.role || data.value))) || '';
       AUTH.isAdmin = String(role).toLowerCase() === 'admin';
       return AUTH.isAdmin;
     }
-  } catch (_e) {
-    // ignore
-  }
+  } catch (_e) {}
 
-  // Fallback: direct table lookup (requires SELECT RLS on v8_admins)
+  // 3) Last resort: direct read (only works if v8_admins is selectable)
   try {
-    const sb = await initSupabase();
-    const { data, error } = await sb
-      .from('v8_admins')
-      .select('user_id')
-      .eq('user_id', AUTH.user.id)
-      .maybeSingle();
-    if (error) throw error;
-    AUTH.isAdmin = !!data;
-  } catch (_e) {
-    AUTH.isAdmin = false;
-  }
-  return AUTH.isAdmin;
+    const { data, error } = await sb.from('v8_admins').select('*').limit(50);
+    if (!error && Array.isArray(data)) {
+      const uid = AUTH.user.id;
+      AUTH.isAdmin = data.some(r => String(r.user_id ?? r.uid ?? r.auth_user_id ?? r.id ?? '') === uid);
+      return AUTH.isAdmin;
+    }
+  } catch (_e) {}
+  AUTH.isAdmin = false;
+  return false;
 }
 
 
