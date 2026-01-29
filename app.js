@@ -54,6 +54,15 @@ const I18N = {
     signOut: "Se déconnecter",
     signedIn: "Connecté",
     signedOut: "Déconnecté",
+    mustLogin: "Vous devez être connecté.",
+    roleAdmin: "Admin",
+    roleAuditor: "Auditeur",
+    ownerLabel: "Propriétaire",
+    allUsers: "tous utilisateurs",
+    adminBadge: "ADMIN",
+    publicReportInvalidTitle: "Lien invalide",
+    publicReportInvalidSubtitle: "Le lien de rapport est invalide ou expiré.",
+    publicReportBack: "Retour",
     shareReport: "Partager",
     shareLinkPrompt: "Lien de rapport (expire le {date})",
     linkCopied: "Lien copié",
@@ -209,6 +218,15 @@ const I18N = {
     signOut: "Sign out",
     signedIn: "Signed in",
     signedOut: "Signed out",
+    mustLogin: "You must be signed in.",
+    roleAdmin: "Admin",
+    roleAuditor: "Auditor",
+    ownerLabel: "Owner",
+    allUsers: "all users",
+    adminBadge: "ADMIN",
+    publicReportInvalidTitle: "Invalid link",
+    publicReportInvalidSubtitle: "This report link is invalid or expired.",
+    publicReportBack: "Back",
     shareReport: "Share",
     shareLinkPrompt: "Report link (expires {date})",
     linkCopied: "Link copied",
@@ -475,11 +493,16 @@ function topBar({title, subtitle, right}){
       ),
       (function(){
         const online = (typeof ONLINE_ENABLED !== "undefined" && ONLINE_ENABLED);
+        const userPill = (!online || !AUTH || !AUTH.user) ? null : h(
+          "div",
+          { class:"pill", style:"max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" },
+          `${AUTH.user.email} • ${AUTH.isAdmin ? t("roleAdmin") : t("roleAuditor")}`
+        );
         const authBtn = !online ? null : (AUTH && AUTH.user
           ? h("button",{class:"btn btn--ghost", onclick: async ()=>{ await signOut(); showToast(t("signedOut")); go("#/login"); }}, t("signOut"))
           : h("a",{class:"btn btn--ghost", href:"#/login"}, t("signIn"))
         );
-        return h("div",{class:"topActions"}, langSel, right || h("div",{}), authBtn || h("div",{}));
+        return h("div",{class:"topActions"}, langSel, userPill || h("div",{}), right || h("div",{}), authBtn || h("div",{}));
       })()
     )
   );
@@ -634,7 +657,28 @@ async function ensureRecoverySession(){
 const ONLINE_ENABLED = !!(SUPABASE_URL && SUPABASE_ANON_KEY && typeof window !== 'undefined' && window.supabase && window.supabase.createClient);
 
 let SB = null;
-let AUTH = { session: null, user: null };
+let AUTH = { session: null, user: null, isAdmin: false, _adminCheckedFor: null };
+
+async function refreshAdminFlag() {
+  if (!ONLINE_ENABLED) { AUTH.isAdmin = false; return false; }
+  if (!AUTH.user) { AUTH.isAdmin = false; AUTH._adminCheckedFor = null; return false; }
+  if (AUTH._adminCheckedFor === AUTH.user.id) return AUTH.isAdmin;
+  AUTH._adminCheckedFor = AUTH.user.id;
+  try {
+    const sb = await initSupabase();
+    const { data, error } = await sb
+      .from("v8_admins")
+      .select("user_id")
+      .eq("user_id", AUTH.user.id)
+      .maybeSingle();
+    if (error) throw error;
+    AUTH.isAdmin = !!data;
+  } catch (_e) {
+    AUTH.isAdmin = false;
+  }
+  return AUTH.isAdmin;
+}
+
 
 async function initSupabase(){
   if (!ONLINE_ENABLED) return null;
@@ -650,6 +694,9 @@ async function initSupabase(){
   SB.auth.onAuthStateChange((_event, session)=>{
     AUTH.session = session;
     AUTH.user = session?.user || null;
+    AUTH._adminCheckedFor = null;
+    AUTH.isAdmin = false;
+    refreshAdminFlag().finally(()=>render());
     // If user signs out, bounce to login (unless on public or auth routes)
     const parts = parseHash();
     const open = new Set(['login','forgot-password','update-password']);
@@ -666,10 +713,19 @@ async function initSupabase(){
 
 async function refreshSession(){
   const sb = await initSupabase();
-  if (!sb) return null;
+  if (!sb) {
+    AUTH.session = null;
+    AUTH.user = null;
+    AUTH._adminCheckedFor = null;
+    AUTH.isAdmin = false;
+    return null;
+  }
   const { data } = await sb.auth.getSession();
   AUTH.session = data.session;
   AUTH.user = data.session?.user || null;
+  AUTH._adminCheckedFor = null;
+  AUTH.isAdmin = false;
+  await refreshAdminFlag();
   return data.session;
 }
 
@@ -732,48 +788,51 @@ async function sbUpsertAudit(audit){
 
 async function sbGetAudit(auditId){
   const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
+  if (!sb) throw new Error("Supabase not initialized");
   const user = await sbRequireUser();
-  const { data, error } = await sb
-    .from('v8_audits')
-    .select('data')
-    .eq('user_id', user.id)
-    .eq('audit_id', auditId)
-    .maybeSingle();
+  await refreshAdminFlag();
+
+  let q = sb.from("v8_audits").select("data").eq("audit_id", auditId);
+  if (!AUTH.isAdmin) q = q.eq("user_id", user.id);
+
+  const { data, error } = await q.maybeSingle();
   if (error) throw error;
   return data?.data || null;
 }
 
 async function sbListAudits(){
   const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
+  if (!sb) throw new Error("Supabase not initialized");
   const user = await sbRequireUser();
-  const { data, error } = await sb
-    .from('v8_audits')
-    .select('audit_id, site_name, auditor_name, facilities, updated_at')
-    .eq('user_id', user.id)
-    .order('updated_at', { ascending: false });
+  await refreshAdminFlag();
+
+  let q = sb
+    .from("v8_audits")
+    .select("audit_id,user_id,site_name,auditor_name,facilities,updated_at");
+
+  if (!AUTH.isAdmin) q = q.eq("user_id", user.id);
+
+  const { data, error } = await q.order("updated_at", { ascending: false }).limit(200);
   if (error) throw error;
+
   return (data || []).map(r => ({
     auditId: r.audit_id,
-    meta: {
-      siteName: r.site_name || '',
-      auditorName: r.auditor_name || '',
-      facilitiesAudited: Array.isArray(r.facilities) ? r.facilities : []
-    },
-    updatedAtISO: r.updated_at || ''
+    ownerUserId: r.user_id,
+    meta: { siteName: r.site_name, auditorName: r.auditor_name, facilitiesAudited: r.facilities },
+    updatedAtISO: r.updated_at,
   }));
 }
 
 async function sbDeleteAudit(auditId){
   const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
+  if (!sb) throw new Error("Supabase not initialized");
   const user = await sbRequireUser();
-  const { error } = await sb
-    .from('v8_audits')
-    .delete()
-    .eq('user_id', user.id)
-    .eq('audit_id', auditId);
+  await refreshAdminFlag();
+
+  let q = sb.from("v8_audits").delete().eq("audit_id", auditId);
+  if (!AUTH.isAdmin) q = q.eq("user_id", user.id);
+
+  const { error } = await q;
   if (error) throw error;
   return true;
 }
@@ -1359,7 +1418,7 @@ async function viewStart(){
         return h("div",{class:"item row-between"},
           h("div",{},
             h("div",{class:"h3"}, meta.siteName || "Unnamed site"),
-            h("div",{class:"small muted"}, `${t("auditorLabel")}: ${meta.auditorName||"-"} • ${t("facilities")}: ${(meta.facilitiesAudited && meta.facilitiesAudited.length) ? meta.facilitiesAudited.join(", ") : t("all")} • Maj: ${updated}`)
+            h("div",{class:"small muted"}, `${t("auditorLabel")}: ${meta.auditorName||"-"} • ${t("facilities")}: ${(meta.facilitiesAudited && meta.facilitiesAudited.length) ? meta.facilitiesAudited.join(", ") : t("all")} • ${t("updatedAt")}: ${updated}${(ONLINE_ENABLED && AUTH.isAdmin && a.ownerUserId) ? ` • ${t("ownerLabel")}: ${String(a.ownerUserId).slice(0,8)}…` : ""}`)
           ),
           h("div",{class:"row"},
             h("button",{onclick: ()=> go(`#/audit/${a.auditId}`)}, t("open")),
@@ -2603,3 +2662,15 @@ route().catch(err=>{
     h("div",{class:"wrap"}, h("div",{class:"card"}, h("pre",{style:"white-space:pre-wrap"}, String(err?.stack||err))))
   ));
 });
+// --- Debug helpers (console) ---
+try {
+  window.M3DBG = {
+    get online(){ return (typeof ONLINE_ENABLED !== "undefined" && ONLINE_ENABLED); },
+    get auth(){ return AUTH; },
+    get user(){ return AUTH?.user || null; },
+    refreshAdminFlag,
+    listAudits: ()=>dbListAudits(),
+    getAudit: (id)=>dbGetAudit(id),
+  };
+} catch(_e) {}
+
