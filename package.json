@@ -6,5 +6,8 @@
   "scripts": {
     "build": "node scripts/build-env.cjs",
     "dev": "python -m http.server 5173"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.93.3"
   }
 }
