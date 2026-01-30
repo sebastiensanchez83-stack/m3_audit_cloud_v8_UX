@@ -20,7 +20,7 @@ const I18N = {
     delete: "Supprimer",
     confirmDelete: "Supprimer cet audit local ?",
     auditsExisting: "Audits existants",
-    backupsLocal: "sauvegarde(s) locale(s)",
+    backupsLocal: "audit(s)",
     noAuditYet: "Aucun audit sauvegardé pour l’instant.",
     newAudit: "Nouvel audit",
     storedLocally: "Tout est stocké localement sur cet appareil (IndexedDB).",
@@ -212,7 +212,7 @@ criteriaCount: "Critères",
     delete: "Delete",
     confirmDelete: "Delete this local audit?",
     auditsExisting: "Existing audits",
-    backupsLocal: "local backup(s)",
+    backupsLocal: "audit(s)",
     noAuditYet: "No saved audit yet.",
     newAudit: "New audit",
     storedLocally: "Everything is stored locally on this device (IndexedDB).",
@@ -746,6 +746,32 @@ const ONLINE_ENABLED = !!(SUPABASE_URL && SUPABASE_ANON_KEY && typeof window !==
 
 let SB = null;
 let AUTH = { session: null, user: null, isAdmin: false, _adminCheckedFor: null };
+
+let ADMIN_USERS_CACHE = null;
+let ADMIN_USERS_CACHE_AT = 0;
+
+function emailForUserId(userId){
+  if (!userId) return null;
+  const list = ADMIN_USERS_CACHE || [];
+  const u = list.find(x => x && x.id === userId);
+  return (u && u.email) ? u.email : null;
+}
+
+async function getAdminUsersCached(force=false){
+  if (!ONLINE_ENABLED) return [];
+  await refreshAdminFlag();
+  if (!AUTH.isAdmin) return [];
+  const now = Date.now();
+  if (!force && ADMIN_USERS_CACHE && (now - ADMIN_USERS_CACHE_AT) < 5*60*1000) return ADMIN_USERS_CACHE;
+  try {
+    const out = await callNetlifyFn("list-users", {});
+    ADMIN_USERS_CACHE = out.users || [];
+    ADMIN_USERS_CACHE_AT = now;
+    return ADMIN_USERS_CACHE;
+  } catch (_e) {
+    return ADMIN_USERS_CACHE || [];
+  }
+}
 
 async function refreshAdminFlag(force=false) {
   if (!ONLINE_ENABLED) { AUTH.isAdmin = false; return false; }
@@ -1666,6 +1692,7 @@ async function viewUpdatePassword(){
 async function viewStart(){
   const dbData = await loadCriteriaDB();
   const audits = await dbListAudits();
+  if (ONLINE_ENABLED && AUTH.isAdmin) { await getAdminUsersCached(); }
 
   const siteInput = h("input",{placeholder: t("sitePlaceholder")});
   const auditorInput = h("input",{placeholder: t("auditorPlaceholder")});
@@ -1766,7 +1793,7 @@ async function viewStart(){
         return h("div",{class:"item row-between"},
           h("div",{},
             h("div",{class:"h3"}, meta.siteName || "Unnamed site"),
-            h("div",{class:"small muted"}, `${t("auditorLabel")}: ${meta.auditorName||"-"} • ${t("facilities")}: ${(meta.facilitiesAudited && meta.facilitiesAudited.length) ? meta.facilitiesAudited.join(", ") : t("all")} • ${t("updatedAt")}: ${updated}${(ONLINE_ENABLED && AUTH.isAdmin && a.ownerUserId) ? ` • ${t("ownerLabel")}: ${String(a.ownerUserId).slice(0,8)}…` : ""}`)
+            h("div",{class:"small muted"}, `${t("auditorLabel")}: ${meta.auditorName||"-"} • ${t("facilities")}: ${(meta.facilitiesAudited && meta.facilitiesAudited.length) ? meta.facilitiesAudited.join(", ") : t("all")} • ${t("updatedAt")}: ${updated}${(ONLINE_ENABLED && AUTH.isAdmin && a.ownerUserId) ? ` • ${t("ownerLabel")}: ${emailForUserId(a.ownerUserId) || (String(a.ownerUserId).slice(0,8)+ "…")}` : ""}`)
           ),
           h("div",{class:"row"},
             h("button",{onclick: ()=> go(`#/audit/${a.auditId}`)}, t("open")),
@@ -1848,6 +1875,8 @@ async function viewAdminUsers() {
     try {
       const out = await callNetlifyFn("list-users", {});
       state.users = out.users || [];
+      ADMIN_USERS_CACHE = state.users;
+      ADMIN_USERS_CACHE_AT = Date.now();
     } catch (e) {
       state.error = e.message || String(e);
     } finally {

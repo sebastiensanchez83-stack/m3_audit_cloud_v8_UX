@@ -44,8 +44,7 @@ exports.handler = async (event) => {
     const token = getBearerToken(event);
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE, {
       auth: { persistSession: false },
-      global: { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-    });
+});
 
     const adminCheck = await requireAdmin(supabaseAdmin, token);
     if (!adminCheck.ok) return json(403, { ok: false, error: adminCheck.error });
