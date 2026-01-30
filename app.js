@@ -483,8 +483,37 @@ function h(tag, attrs={}, ...children){
   }
   for (const c of children){
     if (c === null || c === undefined) continue;
-    if (typeof c === "string") e.appendChild(document.createTextNode(c));
-    else e.appendChild(c);
+
+    // Allow arrays (e.g., map results) as children
+    if (Array.isArray(c)){
+      for (const cc of c){
+        if (cc === null || cc === undefined) continue;
+        if (Array.isArray(cc)){
+          // one level deeper just in case
+          for (const ccc of cc){
+            if (ccc === null || ccc === undefined) continue;
+            if (typeof ccc === "string" || typeof ccc === "number" || typeof ccc === "boolean") e.appendChild(document.createTextNode(String(ccc)));
+            else if (ccc && typeof ccc === "object" && ("nodeType" in ccc)) e.appendChild(ccc);
+            else e.appendChild(document.createTextNode(String(ccc)));
+          }
+        } else if (typeof cc === "string" || typeof cc === "number" || typeof cc === "boolean") {
+          e.appendChild(document.createTextNode(String(cc)));
+        } else if (cc && typeof cc === "object" && ("nodeType" in cc)) {
+          e.appendChild(cc);
+        } else {
+          e.appendChild(document.createTextNode(String(cc)));
+        }
+      }
+      continue;
+    }
+
+    if (typeof c === "string" || typeof c === "number" || typeof c === "boolean") {
+      e.appendChild(document.createTextNode(String(c)));
+    } else if (c && typeof c === "object" && ("nodeType" in c)) {
+      e.appendChild(c);
+    } else {
+      e.appendChild(document.createTextNode(String(c)));
+    }
   }
   return e;
 }
@@ -1884,7 +1913,7 @@ async function viewAdminUsers() {
                 h(
                   "tbody",
                   {},
-                  state.users.map((u) =>
+                  ...state.users.map((u) =>
                     h(
                       "tr",
                       {},
