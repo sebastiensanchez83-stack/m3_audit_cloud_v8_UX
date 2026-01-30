@@ -530,7 +530,7 @@ function updateFooter(){
   if (fh) fh.textContent = t("home");
 }
 
-function topBar({title, subtitle, right}){
+function topBar({title, subtitle, right} = {}){
   const langSel = h(
     "select",
     {
