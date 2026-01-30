@@ -431,6 +431,9 @@ function t(key){
   return (d && d[key]) ? d[key] : (I18N.fr[key] || key);
 }
 
+// Alias used by admin UI (legacy helper name)
+function lt(key){ return t(key); }
+
 const SCORING_GUIDE = {
   fr: [
     { score: 5, label: "Excellence / best practice (preuve claire, déployé, contrôlé)" },
@@ -527,7 +530,7 @@ function updateFooter(){
   if (fh) fh.textContent = t("home");
 }
 
-function topBar({title, subtitle, right} = {}){
+function topBar({title, subtitle, right}){
   const langSel = h(
     "select",
     {
@@ -1411,15 +1414,8 @@ function go(hash){
   location.hash = hash;
 }
 
-window.addEventListener("hashchange", ()=> route().catch(err=>{
-  console.error(err);
-  try{
-    setRoot(h("div",{},
-      topBar({title: t("errorTitle"), subtitle:String(err?.message||err), right:h("button",{onclick:()=>go("#/")}, t("home"))}),
-      h("div",{class:"wrap"}, h("div",{class:"card"}, h("pre",{style:"white-space:pre-wrap"}, String(err?.stack||err))))
-    ));
-  }catch(e){}
-}));
+window.addEventListener("hashchange", ()=> route());
+
 /* ---------- Views ---------- */
 async function viewLogin(){
   if (!ONLINE_ENABLED){
