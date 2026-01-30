@@ -1410,12 +1410,56 @@ function parseHash(){
   return parts;
 }
 
-function go(hash){
-  location.hash = hash;
+function go(hash) {
+  if (location.hash === hash) {
+    // Hash did not change, force navigation/render
+    safeRoute();
+  } else {
+    location.hash = hash;
+  }
 }
 
-window.addEventListener("hashchange", ()=> route());
 
+function paintFatal(err) {
+  console.error(err);
+  const msg = err && (err.stack || err.message) ? (err.stack || err.message) : String(err);
+  try {
+    setRoot(
+      h("div", { class: "app" },
+        h("div", { class: "container" },
+          h("div", { class: "card" },
+            h("div", { class: "h1" }, "Erreur"),
+            h("div", { class: "muted" }, "Une erreur a empêché l’affichage de la page demandée."),
+            h("pre", { class: "pre" }, msg),
+            h("div", { class: "row" },
+              h("button", { class: "btn", onclick: () => safeRoute() }, "Réessayer"),
+              h("button", { class: "btn btn--ghost", onclick: () => go("#/") }, "Accueil")
+            )
+          )
+        )
+      )
+    );
+  } catch (e2) {
+    // fallback ultra-minimal
+    try { document.body.innerHTML = "<pre>" + escapeHtml(msg) + "</pre>"; } catch (_) {}
+  }
+}
+
+async function safeRoute() {
+  try {
+    await route();
+  } catch (err) {
+    paintFatal(err);
+  }
+}
+
+// If an async navigation throws and nobody awaits it, show a useful screen instead of "URL change but nothing".
+window.addEventListener("unhandledrejection", (e) => {
+  paintFatal(e && e.reason ? e.reason : e);
+});
+
+
+window.addEventListener("hashchange", () => safeRoute());
 /* ---------- Views ---------- */
 async function viewLogin(){
   if (!ONLINE_ENABLED){
