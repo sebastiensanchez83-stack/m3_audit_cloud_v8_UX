@@ -527,7 +527,7 @@ function updateFooter(){
   if (fh) fh.textContent = t("home");
 }
 
-function topBar({title, subtitle, right}){
+function topBar({title, subtitle, right} = {}){
   const langSel = h(
     "select",
     {
@@ -1411,8 +1411,15 @@ function go(hash){
   location.hash = hash;
 }
 
-window.addEventListener("hashchange", ()=> route());
-
+window.addEventListener("hashchange", ()=> route().catch(err=>{
+  console.error(err);
+  try{
+    setRoot(h("div",{},
+      topBar({title: t("errorTitle"), subtitle:String(err?.message||err), right:h("button",{onclick:()=>go("#/")}, t("home"))}),
+      h("div",{class:"wrap"}, h("div",{class:"card"}, h("pre",{style:"white-space:pre-wrap"}, String(err?.stack||err))))
+    ));
+  }catch(e){}
+}));
 /* ---------- Views ---------- */
 async function viewLogin(){
   if (!ONLINE_ENABLED){
