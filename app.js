@@ -57,8 +57,26 @@ const I18N = {
     mustLogin: "Vous devez être connecté.",
     roleAdmin: "Admin",
     adminPanel: "Administration",
+    adminUsersNav: "Users",
+    adminBaseNav: "Base audit",
     adminPanelHelp: "Invitations et gestion des accès.",
     inviteUserTitle: "Inviter un utilisateur",
+usersTitle: "Users",
+usersHelp: "Liste des comptes et gestion des rôles.",
+promoteAdmin: "Promouvoir admin",
+demoteAdmin: "Rétrograder",
+resetUserPassword: "Reset password",
+refreshUsers: "Rafraîchir",
+criteriaUpdateTitle: "Mise à jour base audit",
+criteriaUpdateHelp: "Upload du fichier Excel (format M3_Audit_v5) pour mettre à jour la base de critères.",
+chooseExcel: "Choisir un fichier Excel",
+parseExcel: "Analyser",
+uploadToDb: "Uploader en base",
+downloadJson: "Télécharger JSON",
+versionLabel: "Version",
+parsing: "Analyse…",
+uploading: "Upload…",
+criteriaCount: "Critères",
     inviteEmailPh: "Email (ex: user@domaine.com)",
     inviteRole: "Rôle",
     sendInvite: "Envoyer invitation",
@@ -231,8 +249,26 @@ const I18N = {
     mustLogin: "You must be signed in.",
     roleAdmin: "Admin",
     adminPanel: "Administration",
+    adminUsersNav: "Users",
+    adminBaseNav: "Audit base",
     adminPanelHelp: "Invites and access management.",
     inviteUserTitle: "Invite a user",
+usersTitle: "Users",
+usersHelp: "List accounts and manage roles.",
+promoteAdmin: "Promote to admin",
+demoteAdmin: "Demote",
+resetUserPassword: "Reset password",
+refreshUsers: "Refresh",
+criteriaUpdateTitle: "Audit base update",
+criteriaUpdateHelp: "Upload the Excel file (M3_Audit_v5 format) to update the criteria base.",
+chooseExcel: "Choose an Excel file",
+parseExcel: "Parse",
+uploadToDb: "Upload to DB",
+downloadJson: "Download JSON",
+versionLabel: "Version",
+parsing: "Parsing…",
+uploading: "Uploading…",
+criteriaCount: "Criteria",
     inviteEmailPh: "Email (e.g. user@domain.com)",
     inviteRole: "Role",
     sendInvite: "Send invite",
@@ -522,7 +558,7 @@ function topBar({title, subtitle, right}){
           ? h("button",{class:"btn btn--ghost", onclick: async ()=>{ await signOut(); showToast(t("signedOut")); go("#/login"); }}, t("signOut"))
           : h("a",{class:"btn btn--ghost", href:"#/login"}, t("signIn"))
         );
-        return h("div",{class:"topActions"}, langSel, userPill || h("div",{}), right || h("div",{}), authBtn || h("div",{}));
+        return h("div",{class:"topActions"}, langSel, userPill || h("div",{}), (AUTH && AUTH.isAdmin) ? h("div",{class:"adminLinks"}, h("a",{class:"btn btn--ghost", href:"#/users"}, t("adminUsersNav")), h("a",{class:"btn btn--ghost", href:"#/base"}, t("adminBaseNav"))) : h("div",{}), right || h("div",{}), authBtn || h("div",{}));
       })()
     )
   );
@@ -974,8 +1010,134 @@ async function dbDeleteAudit(auditId){
 
 /* ---------- Criteria ---------- */
 let CRITERIA_DB = null;
+let CRITERIA_VERSION = "";
+
+/** -------- Netlify Functions + Excel helpers ---------- */
+async function callNetlifyFn(fnName, payload) {
+  const token = AUTH?.session?.access_token;
+  const res = await fetch(`/.netlify/functions/${fnName}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload || {}),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error || `Function ${fnName} failed`);
+  return json;
+}
+
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    const existing = Array.from(document.scripts).find((s) => s.src === src);
+    if (existing) {
+      if (existing.dataset.loaded === "1") return resolve();
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", (e) => reject(e));
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    s.onload = () => {
+      s.dataset.loaded = "1";
+      resolve();
+    };
+    s.onerror = (e) => reject(e);
+    document.head.appendChild(s);
+  });
+}
+
+async function ensureXLSX() {
+  if (window.XLSX) return window.XLSX;
+  await loadScriptOnce("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
+  if (!window.XLSX) throw new Error("XLSX library not loaded (network blocked?)");
+  return window.XLSX;
+}
+
+function normHeader(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function pick(row, headerMap, key, fallback = "") {
+  const k = headerMap[key];
+  return k ? row[k] : fallback;
+}
+
+async function parseCriteriaExcel(file) {
+  const XLSX = await ensureXLSX();
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array" });
+  const ws = wb.Sheets["Audit"] || wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+  if (!rows || !rows.length) return [];
+
+  const headerKeys = Object.keys(rows[0] || {});
+  const headerMap = {};
+  headerKeys.forEach((k) => (headerMap[normHeader(k)] = k));
+
+  const mapped = [];
+  for (const r of rows) {
+    const id = String(pick(r, headerMap, "criterion_id") || pick(r, headerMap, "criterionid") || "").trim();
+    if (!id) continue;
+
+    const weightRaw = pick(r, headerMap, "weight");
+    const w = weightRaw === "" || weightRaw == null ? NaN : Number(weightRaw);
+
+    mapped.push({
+      id,
+      pillar: String(pick(r, headerMap, "pillar")).trim(),
+      parentGroup: String(pick(r, headerMap, "parentgroup")).trim(),
+      facility: String(pick(r, headerMap, "facilities")).trim(),
+      title: String(pick(r, headerMap, "criterion")).trim(),
+      description: String(pick(r, headerMap, "description")).trim(),
+      measurement: String(pick(r, headerMap, "measurement")).trim(),
+      unit: String(pick(r, headerMap, "unit")).trim(),
+      threshold: String(pick(r, headerMap, "threshold")).trim(),
+      method: String(pick(r, headerMap, "method")).trim(),
+      evidenceRequired: String(pick(r, headerMap, "evidence_required")).trim(),
+      frequency: String(pick(r, headerMap, "frequency")).trim(),
+      owner: String(pick(r, headerMap, "owner")).trim(),
+      weight: Number.isFinite(w) ? w : "",
+      failSafe: String(pick(r, headerMap, "fail_safe")).trim(),
+      externalRequirement: String(pick(r, headerMap, "external_requirement")).trim(),
+      crosswalk: String(pick(r, headerMap, "crosswalk_certifications")).trim(),
+      domain: String(pick(r, headerMap, "domain")).trim(),
+    });
+  }
+  return mapped;
+}
+
+
 async function loadCriteriaDB(){
   if (CRITERIA_DB) return CRITERIA_DB;
+
+  // Try latest criteria from DB (online), fallback to local criteria.json files
+  if (ONLINE_ENABLED && SB){
+    try{
+      const { data, error } = await SB
+        .from("v8_criteria_versions")
+        .select("version,criteria,created_at")
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (!error && data && data.length && data[0] && data[0].criteria){
+        CRITERIA_DB = data[0].criteria;
+        CRITERIA_VERSION = data[0].version || "";
+        return CRITERIA_DB;
+      }
+    }catch(e){
+      // ignore and fallback
+    }
+  }
 
   const urls = ["./data/criteria.json", "./criteria.json"];
   let lastErr = null;
@@ -985,6 +1147,7 @@ async function loadCriteriaDB(){
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       CRITERIA_DB = await res.json();
+      CRITERIA_VERSION = "";
       return CRITERIA_DB;
     }catch(e){
       lastErr = e;
@@ -1587,6 +1750,229 @@ function makeProgressCard(title, items){
       )
     )
   );
+}
+
+async function viewAdminUsers() {
+  if (!ONLINE_ENABLED) {
+    setRoot(
+      h("div", { class: "page" }, topBar(), h("div", { class: "card" }, h("h3", {}, lt("usersTitle")), h("div", { class: "muted" }, "Offline: indisponible.")))
+    );
+    return;
+  }
+  if (!AUTH.user) return viewLogin();
+  await refreshAdminFlag();
+  if (!AUTH.isAdmin) return viewStart();
+
+  let state = { loading: true, error: "", users: [] };
+
+  async function load() {
+    state.loading = true;
+    state.error = "";
+    paint();
+    try {
+      const out = await callNetlifyFn("list-users", {});
+      state.users = out.users || [];
+    } catch (e) {
+      state.error = e.message || String(e);
+    } finally {
+      state.loading = false;
+      paint();
+    }
+  }
+
+  async function toggleRole(u) {
+    const makeAdmin = !u.is_admin;
+    try {
+      await callNetlifyFn("set-user-role", { target_user_id: u.id, make_admin: makeAdmin });
+      await load();
+    } catch (e) {
+      alert(e.message || String(e));
+    }
+  }
+
+  async function resetPwd(u) {
+    if (!confirm(`${lt("resetUserPassword")} : ${u.email} ?`)) return;
+    try {
+      await callNetlifyFn("reset-user-password", { email: u.email });
+      alert("OK: email envoyé.");
+    } catch (e) {
+      alert(e.message || String(e));
+    }
+  }
+
+  function paint() {
+    setRoot(
+      h(
+        "div",
+        { class: "page" },
+        topBar(),
+        h("div", { class: "row", style: "align-items:center; justify-content:space-between; margin-bottom:10px" },
+          h("div", {}, h("h2", { style: "margin:0" }, lt("usersTitle")), h("div", { class: "muted" }, lt("usersHelp"))),
+          h("div", { class: "row", style: "gap:8px" },
+            h("button", { class: "btn", onclick: () => (location.hash = "#/") }, "←"),
+            h("button", { class: "btn", onclick: load }, lt("refreshUsers"))
+          )
+        ),
+        state.error ? h("div", { class: "card", style: "border:1px solid #a33" }, h("b", {}, "Error: "), state.error) : null,
+        state.loading
+          ? h("div", { class: "card" }, "Loading…")
+          : h(
+              "div",
+              { class: "card" },
+              h("div", { class: "muted", style: "margin-bottom:10px" }, `${state.users.length} users`),
+              h(
+                "table",
+                { style: "width:100%; border-collapse:collapse" },
+                h(
+                  "thead",
+                  {},
+                  h(
+                    "tr",
+                    {},
+                    ...["Email", "Role", "Created", "Last sign-in", "Actions"].map((t) =>
+                      h("th", { style: "text-align:left; padding:6px; border-bottom:1px solid #333" }, t)
+                    )
+                  )
+                ),
+                h(
+                  "tbody",
+                  {},
+                  state.users.map((u) =>
+                    h(
+                      "tr",
+                      {},
+                      h("td", { style: "padding:6px; border-bottom:1px solid #222" }, u.email || ""),
+                      h(
+                        "td",
+                        { style: "padding:6px; border-bottom:1px solid #222" },
+                        u.is_admin ? h("span", { class: "badge" }, "Admin") : h("span", { class: "badge" }, "Auditor")
+                      ),
+                      h("td", { style: "padding:6px; border-bottom:1px solid #222" }, (u.created_at || "").slice(0, 10)),
+                      h("td", { style: "padding:6px; border-bottom:1px solid #222" }, (u.last_sign_in_at || "").slice(0, 10)),
+                      h(
+                        "td",
+                        { style: "padding:6px; border-bottom:1px solid #222" },
+                        h("div", { class: "row", style: "gap:8px; flex-wrap:wrap" },
+                          h(
+                            "button",
+                            { class: "btn", onclick: () => toggleRole(u) },
+                            u.is_admin ? lt("demoteAdmin") : lt("promoteAdmin")
+                          ),
+                          h("button", { class: "btn", onclick: () => resetPwd(u) }, lt("resetUserPassword"))
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+      )
+    );
+  }
+
+  paint();
+  await load();
+}
+
+async function viewAdminBaseUpdate() {
+  if (!ONLINE_ENABLED) {
+    setRoot(
+      h("div", { class: "page" }, topBar(), h("div", { class: "card" }, h("h3", {}, lt("criteriaUpdateTitle")), h("div", { class: "muted" }, "Offline: indisponible.")))
+    );
+    return;
+  }
+  if (!AUTH.user) return viewLogin();
+  await refreshAdminFlag();
+  if (!AUTH.isAdmin) return viewStart();
+
+  let file = null;
+  let parsed = null;
+  let state = { parsing: false, uploading: false, error: "", version: "Audit M3 Standard 2026.1" };
+
+  async function onParse() {
+    if (!file) return alert("Choisis un fichier Excel.");
+    state.parsing = true;
+    state.error = "";
+    paint();
+    try {
+      parsed = await parseCriteriaExcel(file);
+      if (!parsed.length) throw new Error("Aucun critère trouvé (sheet 'Audit' ?)");
+    } catch (e) {
+      state.error = e.message || String(e);
+      parsed = null;
+    } finally {
+      state.parsing = false;
+      paint();
+    }
+  }
+
+  async function onUpload() {
+    if (!parsed || !parsed.length) return alert("Analyse le fichier avant.");
+    state.uploading = true;
+    state.error = "";
+    paint();
+    try {
+      await callNetlifyFn("update-criteria", { version: state.version, criteria: parsed });
+      CRITERIA_DB = null;
+      await loadCriteriaDB();
+      alert("OK: base mise à jour.");
+    } catch (e) {
+      state.error = e.message || String(e);
+    } finally {
+      state.uploading = false;
+      paint();
+    }
+  }
+
+  function onDownload() {
+    if (!parsed || !parsed.length) return alert("Analyse le fichier avant.");
+    const blob = new Blob([JSON.stringify(parsed, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `criteria_${state.version.replace(/[^a-z0-9]+/gi, "_")}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function paint() {
+    setRoot(
+      h(
+        "div",
+        { class: "page" },
+        topBar(),
+        h("div", { class: "row", style: "align-items:center; justify-content:space-between; margin-bottom:10px" },
+          h("div", {}, h("h2", { style: "margin:0" }, lt("criteriaUpdateTitle")), h("div", { class: "muted" }, lt("criteriaUpdateHelp"))),
+          h("div", { class: "row", style: "gap:8px" },
+            h("button", { class: "btn", onclick: () => (location.hash = "#/") }, "←")
+          )
+        ),
+        state.error ? h("div", { class: "card", style: "border:1px solid #a33" }, h("b", {}, "Error: "), state.error) : null,
+        h(
+          "div",
+          { class: "card" },
+          h("div", { class: "row", style: "gap:10px; flex-wrap:wrap; align-items:flex-end" },
+            h("div", { style: "min-width:280px" },
+              h("div", { class: "muted", style: "margin-bottom:6px" }, lt("versionLabel")),
+              h("input", { value: state.version, oninput: (e) => { state.version = e.target.value; }, style: "width:100%" })
+            ),
+            h("div", {},
+              h("div", { class: "muted", style: "margin-bottom:6px" }, lt("chooseExcel")),
+              h("input", { type: "file", accept: ".xlsx,.xls", onchange: (e) => { file = e.target.files?.[0] || null; parsed = null; paint(); } })
+            ),
+            h("button", { class: "btn", onclick: onParse, disabled: state.parsing || !file }, state.parsing ? lt("parsing") : lt("parseExcel")),
+            h("button", { class: "btn", onclick: onUpload, disabled: state.uploading || !parsed }, state.uploading ? lt("uploading") : lt("uploadToDb")),
+            h("button", { class: "btn", onclick: onDownload, disabled: !parsed }, lt("downloadJson"))
+          ),
+          h("div", { class: "spacer" }),
+          parsed
+            ? h("div", { class: "muted" }, `${lt("criteriaCount")}: ${parsed.length}`)
+            : h("div", { class: "muted" }, `DB version courante: ${CRITERIA_VERSION || "local"}`)
+        )
+      )
+    );
+  }
+
+  paint();
 }
 
 async function viewAudit(auditId){
@@ -2737,6 +3123,8 @@ function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncI
 </body></html>`;
 }
 
+async function render(){ await route(); }
+
 async function route(){
   updateFooter();
   const parts = parseHash();
@@ -2760,8 +3148,12 @@ async function route(){
   if (parts.length === 0) return viewStart();
   if (parts[0] === "audit" && parts[1]) return viewAudit(parts[1]);
   if (parts[0] === "criterion" && parts[1] && parts[2]) return viewCriterion(parts[1], decodeURIComponent(parts[2]));
-  if (parts[0] === "report" && parts[1]) return viewReport(parts[1]);
-  return viewStart();
+if (parts[0] === "report" && parts[1]) return viewReport(parts[1]);
+if (parts[0] === "users") return viewAdminUsers();
+if (parts[0] === "admin" && parts[1] === "users") return viewAdminUsers();
+if (parts[0] === "base") return viewAdminBaseUpdate();
+if (parts[0] === "admin" && parts[1] === "base") return viewAdminBaseUpdate();
+return viewStart();
 }
 
 // boot
