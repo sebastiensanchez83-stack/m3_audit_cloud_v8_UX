@@ -1,133 +1,99 @@
-// Netlify Function: invite-user
-// Requires env vars on Netlify:
-// - SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)
-// - SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY)
-// - SUPABASE_SERVICE_ROLE_KEY
-//
-// Client must send Authorization: Bearer <access_token>
-// Body: { email: string, role: "auditor" | "admin" }
+const { createClient } = require('@supabase/supabase-js');
 
-const json = (statusCode, bodyObj) => ({
-  statusCode,
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(bodyObj),
-});
-
-async function sbFetch(url, { method="GET", headers={}, body } = {}) {
-  const res = await fetch(url, { method, headers, body });
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-  return { res, data, text };
+function json(statusCode, body) {
+  return {
+    statusCode,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  };
 }
 
-async function rpcBool(supabaseUrl, rpcName, apikey, bearerToken) {
-  const { res, data } = await sbFetch(`${supabaseUrl}/rest/v1/rpc/${rpcName}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "apikey": apikey,
-      "Authorization": `Bearer ${bearerToken}`,
-    },
-    body: "{}",
-  });
-  if (!res.ok) return { ok: false, value: false, error: data?.message || data?.error || `RPC ${rpcName} failed` };
-  return { ok: true, value: Boolean(data) };
+function getBearerToken(event) {
+  const auth = event.headers.authorization || event.headers.Authorization || '';
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  return m ? m[1] : null;
 }
 
-async function rpcTextWithServiceRole(supabaseUrl, rpcName, serviceRoleKey) {
-  const { res, data } = await sbFetch(`${supabaseUrl}/rest/v1/rpc/${rpcName}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "apikey": serviceRoleKey,
-      "Authorization": `Bearer ${serviceRoleKey}`,
-    },
-    body: "{}",
-  });
-  if (!res.ok) return { ok: false, value: null, error: data?.message || data?.error || `RPC ${rpcName} failed` };
-  // PostgREST may return JSON string, e.g. "user_id"
-  return { ok: true, value: (typeof data === "string" ? data : String(data)) };
+async function requireAdmin(supabaseAdmin, token) {
+  if (!token) return { ok: false, error: 'Missing bearer token' };
+
+  const { data: userData, error: userErr } = await supabaseAdmin.auth.getUser(token);
+  if (userErr || !userData?.user?.id) return { ok: false, error: 'Invalid token' };
+
+  const userId = userData.user.id;
+
+  const { data: adminRow, error: adminErr } = await supabaseAdmin
+    .from('v8_admins')
+    .select('user_id,is_admin')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (adminErr) return { ok: false, error: adminErr.message };
+  if (!adminRow?.is_admin) return { ok: false, error: 'Not admin' };
+
+  return { ok: true, userId };
 }
 
 exports.handler = async (event) => {
   try {
-    if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
+    if (event.httpMethod !== 'POST') return json(405, { ok: false, error: 'Method not allowed' });
 
     const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
-      return json(500, { error: "Missing env vars: SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY" });
+    if (!SUPABASE_URL || !SERVICE_ROLE) {
+      return json(500, { ok: false, error: 'Missing env (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)' });
     }
 
-    const authHeader = event.headers.authorization || event.headers.Authorization || "";
-    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-    if (!token) return json(401, { error: "Missing bearer token" });
+    const token = getBearerToken(event);
 
-    let body = {};
-    try { body = JSON.parse(event.body || "{}"); } catch { body = {}; }
-    const email = String(body.email || "").trim().toLowerCase();
-    const role = String(body.role || "auditor").trim().toLowerCase();
-
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(400, { error: "Invalid email" });
-    if (!["auditor", "admin"].includes(role)) return json(400, { error: "Invalid role" });
-
-    // Verify caller is admin (RPC created by your previous SQL patch)
-    const adminCheck = await rpcBool(SUPABASE_URL, "is_v8_admin", SUPABASE_ANON_KEY, token);
-    if (!adminCheck.ok) return json(500, { error: "Cannot verify admin (is_v8_admin RPC missing?)" });
-    if (!adminCheck.value) return json(403, { error: "Not authorized" });
-
-    // Invite via GoTrue Admin endpoint
-    const inviteResp = await sbFetch(`${SUPABASE_URL}/auth/v1/invite`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-      body: JSON.stringify({ email }),
+    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE, {
+      auth: { persistSession: false },
     });
 
-    if (!inviteResp.res.ok) {
-      const msg = inviteResp.data?.msg || inviteResp.data?.message || inviteResp.data?.error || "Invite failed";
-      return json(inviteResp.res.status || 400, { error: msg, details: inviteResp.data });
-    }
+    const adminCheck = await requireAdmin(supabaseAdmin, token);
+    if (!adminCheck.ok) return json(403, { ok: false, error: adminCheck.error });
 
-    const invitedUser = inviteResp.data?.user || inviteResp.data;
-    const invitedId = invitedUser?.id;
+    let payload = {};
+    try { payload = event.body ? JSON.parse(event.body) : {}; } catch { payload = {}; }
 
-    let adminInserted = false;
-    if (role === "admin" && invitedId) {
-      // Determine uid column name in v8_admins (RPC created by your previous SQL patch)
-      const uidColResp = await rpcTextWithServiceRole(SUPABASE_URL, "_v8_admins_uid_col", SUPABASE_SERVICE_ROLE_KEY);
-      const uidCol = uidColResp.ok && uidColResp.value ? uidColResp.value.replace(/"/g, "") : "user_id";
+    const email = String(payload.email || '').trim().toLowerCase();
+    const role = String(payload.role || 'auditor').trim().toLowerCase();
 
-      const payload = { [uidCol]: invitedId };
-      const upsertResp = await sbFetch(`${SUPABASE_URL}/rest/v1/v8_admins?on_conflict=${encodeURIComponent(uidCol)}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "apikey": SUPABASE_SERVICE_ROLE_KEY,
-          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-          "Prefer": "resolution=merge-duplicates,return=minimal",
-        },
-        body: JSON.stringify(payload),
-      });
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(400, { ok: false, error: 'Invalid email' });
+    if (!['auditor', 'admin'].includes(role)) return json(400, { ok: false, error: 'Invalid role' });
 
-      if (!upsertResp.res.ok) {
-        return json(500, { error: "Invite sent but failed to grant admin", details: upsertResp.data });
+    const { data: inviteData, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email);
+    if (inviteErr) return json(400, { ok: false, error: inviteErr.message });
+
+    const invitedId = inviteData?.user?.id || null;
+
+    // Ensure admin flag matches requested role
+    if (invitedId) {
+      if (role === 'admin') {
+        const { error: upErr } = await supabaseAdmin
+          .from('v8_admins')
+          .upsert({ user_id: invitedId, is_admin: true }, { onConflict: 'user_id' });
+
+        if (upErr) {
+          return json(500, { ok: false, error: 'Invite sent but failed to grant admin', details: upErr.message });
+        }
+      } else {
+        // auditor => demote if previously admin
+        const { error: delErr } = await supabaseAdmin
+          .from('v8_admins')
+          .delete()
+          .eq('user_id', invitedId);
+
+        if (delErr) {
+          // non-blocking: invite still valid, but role might stay admin
+          return json(500, { ok: false, error: 'Invite sent but failed to set auditor role', details: delErr.message });
+        }
       }
-      adminInserted = true;
     }
 
-    return json(200, {
-      ok: true,
-      invited: { id: invitedId, email },
-      roleGranted: role === "admin" ? (adminInserted ? "admin" : "pending") : "auditor",
-    });
+    return json(200, { ok: true, invited: { id: invitedId, email }, roleGranted: role });
   } catch (e) {
-    return json(500, { error: e?.message || String(e) });
+    return json(500, { ok: false, error: e?.message || String(e) });
   }
 };
