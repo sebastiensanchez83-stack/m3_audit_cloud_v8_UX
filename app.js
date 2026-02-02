@@ -672,6 +672,7 @@ const SUPABASE_ANON_KEY = ENV.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const SUPABASE_BUCKET = ENV.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "audit-photos";
 const APP_URL = (ENV.APP_URL || "").endsWith('/') ? (ENV.APP_URL || "") : ((ENV.APP_URL || "") ? (ENV.APP_URL || "") + '/' : "");
 const REPORT_TTL_DAYS = Number.parseInt(ENV.REPORT_LINK_DEFAULT_TTL_DAYS || "90", 10);
+const FORCE_PWD_KEY = 'm3_force_pwd_update';
 
 function appBaseUrl(){
   // Prefer configured APP_URL (ends with /), fallback to current origin/path
@@ -693,7 +694,17 @@ function getParamAnywhere(key){
     const v2 = qs.get(key);
     if (v2) return v2;
   }
-  return null;
+    // Fallback: sometimes Supabase puts params directly in the hash (e.g. #access_token=...&type=recovery)
+  try{
+    const h = window.location.hash || '';
+    if (h && h.startsWith('#') && !h.startsWith('#/')){
+      const qs3 = new URLSearchParams(h.slice(1));
+      const v3 = qs3.get(key);
+      if (v3) return v3;
+    }
+  }catch{}
+
+return null;
 }
 
 async function ensureRecoverySession(){
@@ -848,7 +859,7 @@ async function initSupabase(){
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true
+      detectSessionInUrl: false
     }
   });
   // keep local auth state updated
@@ -1652,6 +1663,7 @@ async function viewUpdatePassword(){
       const { error } = await sb.auth.updateUser({ password: p1 });
       if (error) throw error;
       showToast(t('passwordUpdated'));
+      try{ sessionStorage.removeItem(FORCE_PWD_KEY); }catch{}
       // Safety: sign out, then ask user to sign in again
       await signOut();
       go('#/login');
@@ -1745,42 +1757,7 @@ async function viewStart(){
     go(`#/audit/${data.auditId}`);
   }}, t("importAuditProject"));
 
-
-  let adminInvite = null;
-  if (ONLINE_ENABLED && AUTH.isAdmin){
-    const emailIn = h("input",{type:"email", placeholder: t("inviteEmailPh"), style:"flex:2; min-width:240px"});
-    const roleSel = h("select",{style:"flex:1; min-width:160px"},
-      h("option",{value:"auditor"}, t("roleAuditor")),
-      h("option",{value:"admin"}, t("roleAdmin"))
-    );
-    const inviteBtn = h("button",{class:"primary", onclick: async ()=>{
-      const email = String(emailIn.value||"").trim();
-      const role = String(roleSel.value||"auditor");
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ showToast(t("invalidEmail")); return; }
-      const prev = inviteBtn.textContent;
-      inviteBtn.disabled = true;
-      inviteBtn.textContent = t("sendingInvite");
-      try{
-        await inviteUserByEmail(email, role);
-        showToast(t("inviteSent"));
-        emailIn.value = "";
-      }catch(e){
-        showToast(t("inviteFailed") + " — " + (e?.message||e));
-      }finally{
-        inviteBtn.disabled = false;
-        inviteBtn.textContent = prev;
-      }
-    }}, t("sendInvite"));
-
-    adminInvite = h("div",{style:"margin-top:12px"},
-      h("div",{class:"hr"}),
-      h("div",{class:"h3"}, t("adminPanel")),
-      h("div",{class:"small muted"}, t("adminPanelHelp")),
-      h("div",{class:"h3", style:"margin-top:10px"}, t("inviteUserTitle")),
-      h("div",{class:"row", style:"gap:8px; flex-wrap:wrap; margin-top:6px"}, emailIn, roleSel, inviteBtn)
-    );
-  }
-
+  // Admin invitation moved to Users page (#/users)
   const auditList = h("div",{class:"card"},
     h("div",{class:"row-between"},
       h("div",{class:"h3"}, t("auditsExisting")),
@@ -1806,8 +1783,7 @@ async function viewStart(){
           )
         );
       })
-    ) : h("div",{class:"small muted", style:"margin-top:8px"}, t("noAuditYet")),
-    adminInvite
+    ) : h("div",{class:"small muted", style:"margin-top:8px"}, t("noAuditYet"))
   );
 
   const root = h("div",{},
@@ -1867,6 +1843,43 @@ async function viewAdminUsers() {
   if (!AUTH.isAdmin) return viewStart();
 
   let state = { loading: true, error: "", users: [] };
+  // --- Invite form (moved here from Home) ---
+  const inviteEmailInUsersPage = h('input',{type:'email', placeholder: lt('inviteEmailPh'), style:'min-width:260px; flex:2'});
+  const inviteRoleInUsersPage = h('select',{style:'min-width:160px; flex:1'},
+    h('option',{value:'auditor'}, lt('roleAuditor')),
+    h('option',{value:'admin'}, lt('roleAdmin'))
+  );
+  const inviteMsgInUsersPage = h('div',{class:'small muted'});
+  async function doInviteFromUsersPage(){
+    inviteMsgInUsersPage.textContent = '';
+    let btnText = '';
+    const email = String(inviteEmailInUsersPage.value||'').trim().toLowerCase();
+    const role = String(inviteRoleInUsersPage.value||'auditor');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      inviteMsgInUsersPage.textContent = lt('invalidEmail');
+      return;
+    }
+    try{
+      btnText = inviteBtnInUsersPage.textContent;
+      inviteBtnInUsersPage.disabled = true;
+      inviteBtnInUsersPage.textContent = lt('sendingInvite');
+      const out = await inviteUserByEmail(email, role);
+      showToast(lt('inviteSent'));
+      inviteEmailInUsersPage.value = '';
+      // If backend returns an action_link, show it (fallback if SMTP not configured)
+      if (out && (out.action_link || out.actionLink)){
+        inviteMsgInUsersPage.textContent = 'Lien: ' + (out.action_link || out.actionLink);
+      }
+      await load();
+    }catch(e){
+      inviteMsgInUsersPage.textContent = (e && e.message) ? e.message : String(e);
+    }finally{
+      inviteBtnInUsersPage.disabled = false;
+      inviteBtnInUsersPage.textContent = btnText;
+    }
+  }
+  const inviteBtnInUsersPage = h('button',{class:'btn', onclick: doInviteFromUsersPage}, lt('sendInvite'));
+
 
   async function load() {
     state.loading = true;
@@ -1919,6 +1932,13 @@ async function viewAdminUsers() {
           )
         ),
         state.error ? h("div", { class: "card", style: "border:1px solid #a33" }, h("b", {}, "Error: "), state.error) : null,
+        h("div", { class: "card" },
+          h("div", { class: "h3" }, lt("inviteUserTitle")),
+          h("div", { class: "small muted", style: "margin-top:6px" }, lt("adminPanelHelp")),
+          h("div", { class: "row", style: "gap:8px; flex-wrap:wrap; margin-top:10px" }, inviteEmailInUsersPage, inviteRoleInUsersPage, inviteBtnInUsersPage),
+          inviteMsgInUsersPage
+        ),
+
         state.loading
           ? h("div", { class: "card" }, "Loading…")
           : h(
@@ -2052,7 +2072,7 @@ async function viewAdminBaseUpdate() {
           )
         ),
         state.error ? h("div", { class: "card", style: "border:1px solid #a33" }, h("b", {}, "Error: "), state.error) : null,
-        h(
+                h(
           "div",
           { class: "card" },
           h("div", { class: "row", style: "gap:10px; flex-wrap:wrap; align-items:flex-end" },
@@ -3233,6 +3253,35 @@ async function render(){ await route(); }
 async function route(){
   updateFooter();
   const parts = parseHash();
+  // Normalize Supabase auth callbacks that arrive as token-only hash (e.g. #access_token=...&type=recovery)
+  const rawHash = window.location.hash || '';
+  if (rawHash && rawHash.startsWith('#') && !rawHash.startsWith('#/') && (rawHash.includes('access_token=') || rawHash.includes('refresh_token=') || rawHash.includes('type=') || rawHash.includes('error='))){
+    const params = rawHash.slice(1);
+    const qs = new URLSearchParams(params);
+    const typ = (qs.get('type') || '').toLowerCase();
+    const target = (typ === 'recovery' || typ === 'invite') ? '#/update-password' : '#/';
+    if (typ === 'recovery' || typ === 'invite'){
+      try{ sessionStorage.setItem(FORCE_PWD_KEY, typ); }catch{}
+    }
+    window.location.hash = target + '?' + params;
+    return;
+  }
+
+  // Force password update after recovery/invite until completed
+  const linkType = String(getParamAnywhere('type') || '').toLowerCase();
+  if (linkType === 'recovery' || linkType === 'invite'){
+    try{ sessionStorage.setItem(FORCE_PWD_KEY, linkType); }catch{}
+  }
+  let force = null;
+  try{ force = sessionStorage.getItem(FORCE_PWD_KEY); }catch{}
+  if (force && !['update-password','forgot-password','login'].includes(parts[0])){
+    // Preserve any hash query params (code/access_token/refresh_token/type)
+    const h = window.location.hash || '';
+    const q = h.includes('?') ? h.slice(h.indexOf('?')+1) : '';
+    window.location.hash = '#/update-password' + (q ? ('?' + q) : '');
+    return;
+  }
+
 
   // Public report links (no login)
   if (parts[0] === "public" && parts[1]){
