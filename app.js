@@ -3539,8 +3539,8 @@ async function viewPublicReport(token){
           ),
           h('div',{class:'small muted'}, `${it.c.facility} • ${it.c.pillar} • ${it.c.parentGroup}`),
           h('div',{class:'small', style:'margin-top:8px; white-space:pre-wrap'}, it.r.gapObserved || ""),
-          h('div',{class:'small', style:'margin-top:8px; white-space:pre-wrap'}, it.r.action ? ((LANG===$'en$'?$'Action: $':$'Action : $')+it.r.action) : ""),
-          h('div',{class:'small muted', style:'margin-top:6px'}, `${LANG===$'en$'?$'Photos$':$'Photos$'}: ${photos}`)
+          h('div',{class:'small', style:'margin-top:8px; white-space:pre-wrap'}, it.r.action ? ((LANG==='en'?'Action: ':'Action : ')+it.r.action) : ""),
+          h('div',{class:'small muted', style:'margin-top:6px'}, `Photos: ${photos}`)
         )
       );
     }
