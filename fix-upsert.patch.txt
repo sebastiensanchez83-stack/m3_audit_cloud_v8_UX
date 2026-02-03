@@ -1,0 +1,23 @@
+diff --git a/app.js b/app.js
+--- a/app.js
++++ b/app.js
+@@
+-  const { error } = await sb.from("v8_audits").upsert(payload, { onConflict: 'user_id,audit_id' });
++  const { error } = await sb.from("v8_audits").upsert(payload, { onConflict: 'audit_id' });
+
+@@
+-  let q = sb.from("v8_audits").select("data,user_id").eq("audit_id", auditId);
+-  if (!AUTH.isAdmin) q = q.eq("user_id", user.id);
++  let q = sb.from("v8_audits").select("data,user_id").eq("audit_id", auditId);
++  // RLS handles owner/collaborator/admin access
+
+@@
+-  let q = sb
+-    .from("v8_audits")
+-    .select("audit_id,user_id,site_name,auditor_name,facilities,updated_at");
+-
+-  if (!AUTH.isAdmin) q = q.eq("user_id", user.id);
++  let q = sb
++    .from("v8_audits")
++    .select("audit_id,user_id,site_name,auditor_name,facilities,updated_at");
++  // RLS handles owner/collaborator/admin access
