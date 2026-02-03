@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.5.1";
+const APP_VERSION = "standalone-2.5.2";
 const DB_NAME = "m3_audit_standalone";
 const DB_VERSION = 1;
 const STORE_AUDITS = "audits";
@@ -941,6 +941,13 @@ async function sbUpsertAudit(audit){
   if (!sb) throw new Error('Supabase non configuré');
   const user = await sbRequireUser();
 
+// Prevent collaborators from overwriting the whole audit row (RLS will block anyway).
+// Collaborators must save per-criterion via RPC (v8_set_response).
+if (!AUTH.isAdmin && audit && audit.__ownerUserId && audit.__ownerUserId !== user.id) {
+  throw new Error("Accès refusé : vous n'êtes pas propriétaire de cet audit. (Collaboration : sauvegarde par critère uniquement.)");
+}
+
+
   const facilities = (audit.meta && Array.isArray(audit.meta.facilitiesAudited)) ? audit.meta.facilitiesAudited : [];
 
   const ownerId = (AUTH.isAdmin && audit.__ownerUserId) ? audit.__ownerUserId : user.id;
@@ -1055,6 +1062,60 @@ async function sbUploadPhoto(auditId, criterionId, photoId, dataUrl, ownerUserId
   const { data } = sb.storage.from(SUPABASE_BUCKET).getPublicUrl(filePath);
   return data.publicUrl;
 }
+
+
+/* ---- Collaboration RPC helpers (locks + criterion-level save) ---- */
+async function sbAcquireLock(auditId, criterionId, ttlSeconds=120){
+  const sb = await initSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  await sbRequireUser();
+  const { data, error } = await sb.rpc('v8_acquire_lock', {
+    p_audit_id: auditId,
+    p_criterion_id: criterionId,
+    p_ttl_seconds: ttlSeconds
+  });
+  if (error) throw error;
+  return data;
+}
+
+async function sbReleaseLock(auditId, criterionId){
+  const sb = await initSupabase();
+  if (!sb) return false;
+  try{
+    await sbRequireUser();
+    const { data, error } = await sb.rpc('v8_release_lock', {
+      p_audit_id: auditId,
+      p_criterion_id: criterionId
+    });
+    if (error) throw error;
+    return !!data;
+  }catch(e){
+    return false;
+  }
+}
+
+async function sbSetResponse(auditId, criterionId, responseObj){
+  const sb = await initSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  await sbRequireUser();
+  const { data, error } = await sb.rpc('v8_set_response', {
+    p_audit_id: auditId,
+    p_criterion_id: criterionId,
+    p_response: responseObj || {}
+  });
+  if (error) throw error;
+  return !!data;
+}
+
+async function sbNextPhotoId(auditId){
+  const sb = await initSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  await sbRequireUser();
+  const { data, error } = await sb.rpc('v8_next_photo_id', { p_audit_id: auditId });
+  if (error) throw error;
+  return data;
+}
+
 
 // ---- Unified DB API used by the app ----
 async function dbPutAudit(audit){
@@ -2541,6 +2602,60 @@ async function viewCriterion(auditId, criterionId){
   const evidenceRef = h("input",{placeholder: t("evidencePh")});
   const docId = h("input",{placeholder: t("docIdPh")});
 
+
+// --- Collaboration lock state (online) ---
+let lockHeld = false;
+let lockInfo = null;
+let lockKeepAlive = null;
+
+function setCriterionReadOnly(isRO, reasonText){
+  const els = [naChk, naReason, comments, gap, action, evidenceRef, docId];
+  els.forEach(el => { try{ el.disabled = !!isRO; }catch(e){} });
+  chipBtns.forEach(b => { try{ b.disabled = !!isRO || naChk.checked; }catch(e){} });
+  try{ photoInput && (photoInput.disabled = !!isRO); }catch(e){}
+  try{ saveBtn && (saveBtn.disabled = !!isRO); }catch(e){}
+  if (reasonText) showToast(reasonText);
+}
+
+async function ensureCriterionLock(){
+  if (!ONLINE_ENABLED) return { ok:true, you:true };
+  await refreshAdminFlag();
+  if (AUTH.isAdmin) { lockHeld = true; return { ok:true, you:true, admin:true }; }
+  try{
+    const info = await sbAcquireLock(auditId, criterionId, 120);
+    lockInfo = info || null;
+    lockHeld = !!(info && info.ok && info.you);
+    return info;
+  }catch(e){
+    lockInfo = null;
+    lockHeld = false;
+    return null;
+  }
+}
+
+async function startLockKeepAlive(){
+  if (!ONLINE_ENABLED) return;
+  await refreshAdminFlag();
+  if (AUTH.isAdmin) return;
+  if (!lockHeld) return;
+
+  lockKeepAlive = setInterval(async ()=>{
+    try{ await sbAcquireLock(auditId, criterionId, 120); }catch(e){}
+  }, 60000);
+
+  const onHash = async ()=>{
+    const h = location.hash || '';
+    if (!h.startsWith(`#/criterion/${auditId}/`)){
+      window.removeEventListener('hashchange', onHash);
+      if (lockKeepAlive) clearInterval(lockKeepAlive);
+      lockKeepAlive = null;
+      await sbReleaseLock(auditId, criterionId);
+    }
+  };
+  window.addEventListener('hashchange', onHash);
+}
+
+
   const levelPill = h("span",{class:"pill"}, t("notSet"));
 
   // Score chips (better on Android)
@@ -2628,7 +2743,19 @@ async function viewCriterion(auditId, criterionId){
       weight: c.weight
     };
     next.updatedAtISO = new Date().toISOString();
-    await dbPutAudit(next);
+
+if (ONLINE_ENABLED){
+  // Online collaboration: save only this criterion via RPC (RLS-safe)
+  const li = await ensureCriterionLock();
+  if (!AUTH.isAdmin && !(li && li.ok && li.you)){
+    const by = li?.lockedByEmail ? ` (${li.lockedByEmail})` : "";
+    return alert(`Critère verrouillé par un autre auditeur${by}.`);
+  }
+  await startLockKeepAlive();
+  await sbSetResponse(auditId, criterionId, next.responses[criterionId]);
+}else{
+  await dbPutAudit(next);
+}
     showToast(t("toastSaved"));
     // Auto-advance within the same filtered order
     if (nextId) return go(`#/criterion/${auditId}/${encodeURIComponent(nextId)}`);
@@ -2675,9 +2802,17 @@ async function viewCriterion(auditId, criterionId){
   photoInput.addEventListener("change", async ()=>{
     const f = photoInput.files && photoInput.files[0];
     if (!f) return;
-    const now = new Date();
-    const photoId = computeNextPhotoId();
-    row.photoSeq = (row.photoSeq || 1) + 1;
+
+const now = new Date();
+let photoId = null;
+
+if (ONLINE_ENABLED){
+  // Atomic sequence in DB to avoid collisions between collaborators
+  try{ photoId = await sbNextPhotoId(auditId); }catch(e){ photoId = computeNextPhotoId(); }
+}else{
+  photoId = computeNextPhotoId();
+  row.photoSeq = (row.photoSeq || 1) + 1;
+}
 
     const blob = f.slice(0, f.size, f.type || "image/jpeg");
     const lines = [
@@ -2689,7 +2824,7 @@ async function viewCriterion(auditId, criterionId){
 
     let photoUrl = null;
     if (ONLINE_ENABLED){
-      try{ photoUrl = await sbUploadPhoto(auditId, c.id, photoId, dataUrl, row.__ownerUserId); }catch(e){ photoUrl = null; }
+      try{ photoUrl = await sbUploadPhoto(auditId, c.id, photoId, dataUrl, null); }catch(e){ photoUrl = null; }
     }
 
     const next = {...row};
@@ -2705,7 +2840,18 @@ async function viewCriterion(auditId, criterionId){
     });
     next.responses[criterionId] = {...cur, photos};
     next.updatedAtISO = new Date().toISOString();
-    await dbPutAudit(next);
+
+if (ONLINE_ENABLED){
+  const li = await ensureCriterionLock();
+  if (!AUTH.isAdmin && !(li && li.ok && li.you)){
+    const by = li?.lockedByEmail ? ` (${li.lockedByEmail})` : "";
+    return alert(`Critère verrouillé par un autre auditeur${by}.`);
+  }
+  await startLockKeepAlive();
+  await sbSetResponse(auditId, criterionId, next.responses[criterionId]);
+}else{
+  await dbPutAudit(next);
+}
 
     // refresh local snapshot
     responses[criterionId] = next.responses[criterionId];
@@ -2826,6 +2972,19 @@ async function viewCriterion(auditId, criterionId){
 
   const backBtn = h("button",{onclick: ()=> go(`#/audit/${auditId}`)}, t("back"));
   const saveBtn = h("button",{class:"primary", onclick: onSave}, t("saveNext"));
+
+
+// Acquire criterion lock (online) so that only one auditor edits at a time.
+if (ONLINE_ENABLED){
+  const li = await ensureCriterionLock();
+  if (!AUTH.isAdmin && !(li && li.ok && li.you)){
+    const by = li?.lockedByEmail ? ` (${li.lockedByEmail})` : "";
+    setCriterionReadOnly(true, `Verrouillé${by}`);
+  }else{
+    await startLockKeepAlive();
+  }
+}
+
 
   const prevBtn = h("button",{onclick: ()=> prevId ? go(`#/criterion/${auditId}/${encodeURIComponent(prevId)}`) : null, disabled: !prevId}, t("prev"));
   const nextBtn = h("button",{onclick: ()=> nextId ? go(`#/criterion/${auditId}/${encodeURIComponent(nextId)}`) : null, disabled: !nextId}, t("next"));
