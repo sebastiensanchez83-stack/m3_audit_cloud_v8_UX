@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.5.2";
+const APP_VERSION = "standalone-2.5.3";
 const DB_NAME = "m3_audit_standalone";
 const DB_VERSION = 1;
 const STORE_AUDITS = "audits";
@@ -186,6 +186,8 @@ criteriaCount: "Critères",
     criteriaLabel: "Critères",
     ncLabel: "NC",
     scoreLabel: "Score",
+    certLabel: "Certification",
+    pillarFloorLabel: "Plancher pilier",
     noNC: "Aucune NC.",
     scoreDefinition: "Définition: Score% = Σ(weight*score) / (5*Σ(weight))",
     errorTitle: "Erreur",
@@ -396,6 +398,8 @@ criteriaCount: "Criteria",
     criteriaLabel: "Criteria",
     ncLabel: "NC",
     scoreLabel: "Score",
+    certLabel: "Certification",
+    pillarFloorLabel: "Pillar floor",
     noNC: "No NC.",
     scoreDefinition: "Definition: Score% = Σ(weight*score) / (5*Σ(weight))",
     errorTitle: "Error",
@@ -941,13 +945,6 @@ async function sbUpsertAudit(audit){
   if (!sb) throw new Error('Supabase non configuré');
   const user = await sbRequireUser();
 
-// Prevent collaborators from overwriting the whole audit row (RLS will block anyway).
-// Collaborators must save per-criterion via RPC (v8_set_response).
-if (!AUTH.isAdmin && audit && audit.__ownerUserId && audit.__ownerUserId !== user.id) {
-  throw new Error("Accès refusé : vous n'êtes pas propriétaire de cet audit. (Collaboration : sauvegarde par critère uniquement.)");
-}
-
-
   const facilities = (audit.meta && Array.isArray(audit.meta.facilitiesAudited)) ? audit.meta.facilitiesAudited : [];
 
   const ownerId = (AUTH.isAdmin && audit.__ownerUserId) ? audit.__ownerUserId : user.id;
@@ -963,7 +960,7 @@ if (!AUTH.isAdmin && audit && audit.__ownerUserId && audit.__ownerUserId !== use
     data: audit
   };
 
-  const { error } = await sb.from('v8_audits').upsert(payload, { onConflict: 'audit_id' });
+  const { error } = await sb.from('v8_audits').upsert(payload, { onConflict: 'user_id,audit_id' });
   if (error) throw error;
   return true;
 }
@@ -974,11 +971,10 @@ async function sbGetAudit(auditId){
   const user = await sbRequireUser();
   await refreshAdminFlag();
 
-  const { data, error } = await sb
-    .from("v8_audits")
-    .select("data,user_id")
-    .eq("audit_id", auditId)
-    .maybeSingle();
+  let q = sb.from("v8_audits").select("data,user_id").eq("audit_id", auditId);
+  if (!AUTH.isAdmin) q = q.eq("user_id", user.id);
+
+  const { data, error } = await q.maybeSingle();
   if (error) throw error;
   const audit = data?.data || null;
   if (audit && data?.user_id) audit.__ownerUserId = data.user_id;
@@ -995,7 +991,8 @@ async function sbListAudits(){
     .from("v8_audits")
     .select("audit_id,user_id,site_name,auditor_name,facilities,updated_at");
 
-  // RLS handles owner/collaborator/admin visibility
+  if (!AUTH.isAdmin) q = q.eq("user_id", user.id);
+
   const { data, error } = await q.order("updated_at", { ascending: false }).limit(200);
   if (error) throw error;
 
@@ -1062,60 +1059,6 @@ async function sbUploadPhoto(auditId, criterionId, photoId, dataUrl, ownerUserId
   const { data } = sb.storage.from(SUPABASE_BUCKET).getPublicUrl(filePath);
   return data.publicUrl;
 }
-
-
-/* ---- Collaboration RPC helpers (locks + criterion-level save) ---- */
-async function sbAcquireLock(auditId, criterionId, ttlSeconds=120){
-  const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
-  await sbRequireUser();
-  const { data, error } = await sb.rpc('v8_acquire_lock', {
-    p_audit_id: auditId,
-    p_criterion_id: criterionId,
-    p_ttl_seconds: ttlSeconds
-  });
-  if (error) throw error;
-  return data;
-}
-
-async function sbReleaseLock(auditId, criterionId){
-  const sb = await initSupabase();
-  if (!sb) return false;
-  try{
-    await sbRequireUser();
-    const { data, error } = await sb.rpc('v8_release_lock', {
-      p_audit_id: auditId,
-      p_criterion_id: criterionId
-    });
-    if (error) throw error;
-    return !!data;
-  }catch(e){
-    return false;
-  }
-}
-
-async function sbSetResponse(auditId, criterionId, responseObj){
-  const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
-  await sbRequireUser();
-  const { data, error } = await sb.rpc('v8_set_response', {
-    p_audit_id: auditId,
-    p_criterion_id: criterionId,
-    p_response: responseObj || {}
-  });
-  if (error) throw error;
-  return !!data;
-}
-
-async function sbNextPhotoId(auditId){
-  const sb = await initSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
-  await sbRequireUser();
-  const { data, error } = await sb.rpc('v8_next_photo_id', { p_audit_id: auditId });
-  if (error) throw error;
-  return data;
-}
-
 
 // ---- Unified DB API used by the app ----
 async function dbPutAudit(audit){
@@ -1329,6 +1272,80 @@ function computeWeightedScore(criteria, responses, filterFn){
   }
   const pct = sumW ? (sumPts / (5 * sumW)) * 100 : 0;
   return { sumW, sumPts, pct: Math.round(pct*100)/100 };
+}
+
+// Certification levels (from Executive_Note sheet in M3_Audit_2026-1.xlsx)
+// Method: a level is achieved if BOTH:
+//  (1) Global score >= global floor
+//  (2) Minimum pillar score >= pillar floor
+// Floors are expressed as ratios (0.6 = 60%). We compute from pct/100.
+const CERT_LEVELS = [
+  { key: "Sovereign", globalFloor: 0.9, pillarFloor: 0.8 },
+  { key: "Flagship",  globalFloor: 0.8, pillarFloor: 0.7 },
+  { key: "Regatta",   globalFloor: 0.7, pillarFloor: 0.6 },
+  { key: "Horizon",   globalFloor: 0.6, pillarFloor: 0.5 },
+];
+
+function certLabelFromKey(key, lang){
+  const L = (lang === "en") ? "en" : "fr";
+  if (!key || key === "NotCertified"){
+    return (L === "en") ? "Not certified" : "Non certifié";
+  }
+  return key; // Horizon/Regatta/Flagship/Sovereign
+}
+
+function computeCertificationLevel(totalPct, pillarPcts, lang){
+  const total = (Number(totalPct) || 0) / 100;
+  const mins = (pillarPcts || []).filter(v => Number.isFinite(v));
+  const minPillar = mins.length ? (Math.min(...mins) / 100) : 0;
+
+  for (const lvl of CERT_LEVELS){
+    if (total >= lvl.globalFloor && minPillar >= lvl.pillarFloor){
+      return {
+        key: lvl.key,
+        label: certLabelFromKey(lvl.key, lang),
+        totalPct: Number(totalPct) || 0,
+        minPillarPct: mins.length ? Math.min(...mins) : 0,
+        globalFloorPct: lvl.globalFloor * 100,
+        pillarFloorPct: lvl.pillarFloor * 100,
+      };
+    }
+  }
+  // not certified
+  return {
+    key: "NotCertified",
+    label: certLabelFromKey("NotCertified", lang),
+    totalPct: Number(totalPct) || 0,
+    minPillarPct: mins.length ? Math.min(...mins) : 0,
+    globalFloorPct: CERT_LEVELS[CERT_LEVELS.length-1].globalFloor * 100,
+    pillarFloorPct: CERT_LEVELS[CERT_LEVELS.length-1].pillarFloor * 100,
+  };
+}
+
+function computeCertificationBundle(criteria, responses, auditedFacilities, lang){
+  const pillarLabels = Array.from(new Set(criteria.map(c => (c.pillar || "—"))));
+
+  // Overall (all audited facilities)
+  const overall = computeWeightedScore(criteria, responses);
+  const overallPillarPcts = pillarLabels.map(pl =>
+    computeWeightedScore(criteria, responses, c => ((c.pillar || "—") === pl)).pct
+  );
+  const overallCert = computeCertificationLevel(overall.pct, overallPillarPcts, lang);
+
+  // Per facility
+  const byFacility = [];
+  for (const fac of (auditedFacilities || [])){
+    const total = computeWeightedScore(criteria, responses, c => ((c.facility || "") === fac));
+    const pillarPcts = pillarLabels.map(pl =>
+      computeWeightedScore(criteria, responses, c => ((c.facility || "") === fac) && ((c.pillar || "—") === pl)).pct
+    );
+    byFacility.push({
+      facility: fac,
+      ...computeCertificationLevel(total.pct, pillarPcts, lang)
+    });
+  }
+
+  return { overall: overallCert, byFacility };
 }
 
 function tagClass(level){
@@ -2602,60 +2619,6 @@ async function viewCriterion(auditId, criterionId){
   const evidenceRef = h("input",{placeholder: t("evidencePh")});
   const docId = h("input",{placeholder: t("docIdPh")});
 
-
-// --- Collaboration lock state (online) ---
-let lockHeld = false;
-let lockInfo = null;
-let lockKeepAlive = null;
-
-function setCriterionReadOnly(isRO, reasonText){
-  const els = [naChk, naReason, comments, gap, action, evidenceRef, docId];
-  els.forEach(el => { try{ el.disabled = !!isRO; }catch(e){} });
-  chipBtns.forEach(b => { try{ b.disabled = !!isRO || naChk.checked; }catch(e){} });
-  try{ photoInput && (photoInput.disabled = !!isRO); }catch(e){}
-  try{ saveBtn && (saveBtn.disabled = !!isRO); }catch(e){}
-  if (reasonText) showToast(reasonText);
-}
-
-async function ensureCriterionLock(){
-  if (!ONLINE_ENABLED) return { ok:true, you:true };
-  await refreshAdminFlag();
-  if (AUTH.isAdmin) { lockHeld = true; return { ok:true, you:true, admin:true }; }
-  try{
-    const info = await sbAcquireLock(auditId, criterionId, 120);
-    lockInfo = info || null;
-    lockHeld = !!(info && info.ok && info.you);
-    return info;
-  }catch(e){
-    lockInfo = null;
-    lockHeld = false;
-    return null;
-  }
-}
-
-async function startLockKeepAlive(){
-  if (!ONLINE_ENABLED) return;
-  await refreshAdminFlag();
-  if (AUTH.isAdmin) return;
-  if (!lockHeld) return;
-
-  lockKeepAlive = setInterval(async ()=>{
-    try{ await sbAcquireLock(auditId, criterionId, 120); }catch(e){}
-  }, 60000);
-
-  const onHash = async ()=>{
-    const h = location.hash || '';
-    if (!h.startsWith(`#/criterion/${auditId}/`)){
-      window.removeEventListener('hashchange', onHash);
-      if (lockKeepAlive) clearInterval(lockKeepAlive);
-      lockKeepAlive = null;
-      await sbReleaseLock(auditId, criterionId);
-    }
-  };
-  window.addEventListener('hashchange', onHash);
-}
-
-
   const levelPill = h("span",{class:"pill"}, t("notSet"));
 
   // Score chips (better on Android)
@@ -2743,19 +2706,7 @@ async function startLockKeepAlive(){
       weight: c.weight
     };
     next.updatedAtISO = new Date().toISOString();
-
-if (ONLINE_ENABLED){
-  // Online collaboration: save only this criterion via RPC (RLS-safe)
-  const li = await ensureCriterionLock();
-  if (!AUTH.isAdmin && !(li && li.ok && li.you)){
-    const by = li?.lockedByEmail ? ` (${li.lockedByEmail})` : "";
-    return alert(`Critère verrouillé par un autre auditeur${by}.`);
-  }
-  await startLockKeepAlive();
-  await sbSetResponse(auditId, criterionId, next.responses[criterionId]);
-}else{
-  await dbPutAudit(next);
-}
+    await dbPutAudit(next);
     showToast(t("toastSaved"));
     // Auto-advance within the same filtered order
     if (nextId) return go(`#/criterion/${auditId}/${encodeURIComponent(nextId)}`);
@@ -2802,17 +2753,9 @@ if (ONLINE_ENABLED){
   photoInput.addEventListener("change", async ()=>{
     const f = photoInput.files && photoInput.files[0];
     if (!f) return;
-
-const now = new Date();
-let photoId = null;
-
-if (ONLINE_ENABLED){
-  // Atomic sequence in DB to avoid collisions between collaborators
-  try{ photoId = await sbNextPhotoId(auditId); }catch(e){ photoId = computeNextPhotoId(); }
-}else{
-  photoId = computeNextPhotoId();
-  row.photoSeq = (row.photoSeq || 1) + 1;
-}
+    const now = new Date();
+    const photoId = computeNextPhotoId();
+    row.photoSeq = (row.photoSeq || 1) + 1;
 
     const blob = f.slice(0, f.size, f.type || "image/jpeg");
     const lines = [
@@ -2824,7 +2767,7 @@ if (ONLINE_ENABLED){
 
     let photoUrl = null;
     if (ONLINE_ENABLED){
-      try{ photoUrl = await sbUploadPhoto(auditId, c.id, photoId, dataUrl, null); }catch(e){ photoUrl = null; }
+      try{ photoUrl = await sbUploadPhoto(auditId, c.id, photoId, dataUrl, row.__ownerUserId); }catch(e){ photoUrl = null; }
     }
 
     const next = {...row};
@@ -2840,18 +2783,7 @@ if (ONLINE_ENABLED){
     });
     next.responses[criterionId] = {...cur, photos};
     next.updatedAtISO = new Date().toISOString();
-
-if (ONLINE_ENABLED){
-  const li = await ensureCriterionLock();
-  if (!AUTH.isAdmin && !(li && li.ok && li.you)){
-    const by = li?.lockedByEmail ? ` (${li.lockedByEmail})` : "";
-    return alert(`Critère verrouillé par un autre auditeur${by}.`);
-  }
-  await startLockKeepAlive();
-  await sbSetResponse(auditId, criterionId, next.responses[criterionId]);
-}else{
-  await dbPutAudit(next);
-}
+    await dbPutAudit(next);
 
     // refresh local snapshot
     responses[criterionId] = next.responses[criterionId];
@@ -2973,19 +2905,6 @@ if (ONLINE_ENABLED){
   const backBtn = h("button",{onclick: ()=> go(`#/audit/${auditId}`)}, t("back"));
   const saveBtn = h("button",{class:"primary", onclick: onSave}, t("saveNext"));
 
-
-// Acquire criterion lock (online) so that only one auditor edits at a time.
-if (ONLINE_ENABLED){
-  const li = await ensureCriterionLock();
-  if (!AUTH.isAdmin && !(li && li.ok && li.you)){
-    const by = li?.lockedByEmail ? ` (${li.lockedByEmail})` : "";
-    setCriterionReadOnly(true, `Verrouillé${by}`);
-  }else{
-    await startLockKeepAlive();
-  }
-}
-
-
   const prevBtn = h("button",{onclick: ()=> prevId ? go(`#/criterion/${auditId}/${encodeURIComponent(prevId)}`) : null, disabled: !prevId}, t("prev"));
   const nextBtn = h("button",{onclick: ()=> nextId ? go(`#/criterion/${auditId}/${encodeURIComponent(nextId)}`) : null, disabled: !nextId}, t("next"));
 
@@ -3095,6 +3014,10 @@ async function viewReport(auditId){
     })
     .sort((a,b)=> b.pct - a.pct);
 
+
+
+// Certification level (Executive_Note method: global floor + pillar floor)
+const certification = computeCertificationBundle(criteria, responses, auditedFacilities, LANG);
   // NC register
   const ncItems = [];
   for (const c of criteria){
@@ -3107,7 +3030,7 @@ async function viewReport(auditId){
   }
 
   const exportHTMLBtn = h("button",{onclick: ()=>{
-    const html = buildReportHTML(row, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities);
+    const html = buildReportHTML(row, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities, certification);
     const fn = `M3_Report_${(row.meta.siteName||"site").replaceAll(" ","_")}.html`;
     downloadText(fn, html, "text/html");
   }}, t("exportHtml"));
@@ -3142,6 +3065,26 @@ const exportExcelBtn = h("button",{onclick: ()=>{
   downloadText(`M3_Audit_${site}.xls`, xls, "application/vnd.ms-excel");
 }}, t("exportExcel"));
 
+
+
+const certPills = h("div",{style:"margin-top:8px"},
+  h("span",{class:"pill"}, `${t("certLabel")}: ${certification.overall.label}`),
+  h("span",{class:"pill"}, `${t("scoreLabel")}: ${certification.overall.totalPct.toFixed(2)}%`),
+  h("span",{class:"pill"}, `${t("pillarFloorLabel")}: ${certification.overall.minPillarPct.toFixed(2)}%`)
+);
+
+const certFacility = h("div",{class:"small muted", style:"margin-top:10px"});
+if (certification.byFacility && certification.byFacility.length){
+  certFacility.textContent = (LANG==="en")
+    ? ("Per facility: " + certification.byFacility.map(x=> `${x.facility}=${x.label}`).join(" • "))
+    : ("Par facility : " + certification.byFacility.map(x=> `${x.facility}=${x.label}`).join(" • "));
+}
+
+const certCard = h("div",{class:"card"},
+  h("div",{class:"h2"}, (LANG==="en") ? "Certification result" : "Résultat de certification"),
+  certPills,
+  certFacility
+);
   const pillarWrap = h("div",{class:"grid", style:"gap:10px"});
   const facilityWrap = h("div",{class:"grid", style:"gap:10px"});
   renderBars(pillarWrap, byPillar);
@@ -3171,7 +3114,7 @@ const exportExcelBtn = h("button",{onclick: ()=>{
   const root = h("div",{},
     topBar({
       title: `${t("reportTitle")} — ${row.meta.siteName}`,
-      subtitle: `${t("auditorLabel")}: ${row.meta.auditorName} • ${t("facilities")}: ${(auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(", ") : t("all")} • ${t("overallWeightedScore")}: ${overall.pct.toFixed(2)}%`,
+      subtitle: `${t("auditorLabel")}: ${row.meta.auditorName} • ${t("facilities")}: ${(auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(", ") : t("all")} • ${t("certLabel")}: ${certification.overall.label} • ${t("pillarFloorLabel")}: ${certification.overall.minPillarPct.toFixed(2)}% • ${t("overallWeightedScore")}: ${overall.pct.toFixed(2)}%`,
       right: h("div",{class:"row"}, backBtn, exportJsonBtn, exportExcelBtn, exportHTMLBtn, shareBtn, printBtn)
     }),
     h("div",{class:"wrap grid", style:"gap:12px"},
@@ -3247,6 +3190,9 @@ async function viewPublicReport(token){
     })
     .sort((a,b)=> b.pct - a.pct);
 
+  // Certification level (Executive_Note method: global floor + pillar floor)
+  const certification = computeCertificationBundle(criteria, responses, auditedFacilities, LANG);
+
   const ncItems = [];
   for (const c of criteria){
     const r = responses[c.id];
@@ -3284,7 +3230,7 @@ async function viewPublicReport(token){
   }
 
   const exportHTMLBtn = h('button',{onclick: ()=>{
-    const html = buildReportHTML(audit, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities);
+    const html = buildReportHTML(audit, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities, certification);
     const fn = `M3_Report_${(audit.meta?.siteName||"site").replaceAll(" ","_")}.html`;
     downloadText(fn, html, 'text/html');
   }}, t('exportHtml'));
@@ -3294,7 +3240,7 @@ async function viewPublicReport(token){
   const root = h('div',{},
     topBar({
       title: `${t('reportTitle')} — ${(audit.meta?.siteName||'')}`,
-      subtitle: `${t('facilities')}: ${(auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(', ') : t('all')} • ${t('overallWeightedScore')}: ${overall.pct.toFixed(2)}%`,
+      subtitle: `${t('facilities')}: ${(auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(', ') : t('all')} • ${t('certLabel')}: ${certification.overall.label} • ${t('pillarFloorLabel')}: ${certification.overall.minPillarPct.toFixed(2)}% • ${t('overallWeightedScore')}: ${overall.pct.toFixed(2)}%`,
       right: h('div',{class:'row'}, exportHTMLBtn, printBtn)
     }),
     h('div',{class:'wrap grid', style:'gap:12px'},
@@ -3321,7 +3267,7 @@ function esc(s){
   return String(s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 }
 
-function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncItems, criteriaCount, auditedFacilities){
+function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncItems, criteriaCount, auditedFacilities, certification){
   const L = (lang === "en") ? "en" : "fr";
   const dict = I18N[L] || I18N.fr;
   const lt = (k)=> (dict && dict[k]) ? dict[k] : (I18N.fr[k] || k);
@@ -3393,6 +3339,7 @@ function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncI
       <span class="pill">${esc(lt("ncLabel"))}: ${ncItems.length}</span>
       <span class="pill">ΣW: ${Math.round(overall.sumW)}</span>
       <span class="pill">${esc(lt("scoreLabel"))}: ${overall.pct.toFixed(2)}%</span>
+      ${certification && certification.overall ? `<span class="pill">${esc(lt("certLabel"))}: ${esc(certification.overall.label)}</span><span class="pill">${esc(lt("pillarFloorLabel"))}: ${Number(certification.overall.minPillarPct||0).toFixed(2)}%</span>` : ""}
     </div>
     <div class="muted" style="margin-top:8px">${esc(lt("scoreDefinition"))}</div>
   </div>
@@ -3475,6 +3422,7 @@ route().catch(err=>{
   setRoot(h("div",{},
     topBar({title: t("errorTitle"), subtitle:String(err?.message||err), right:h("button",{onclick:()=>go("#/")}, t("home"))}),
     h("div",{class:"wrap"}, h("div",{class:"card"}, h("pre",{style:"white-space:pre-wrap"}, String(err?.stack||err))))
+      certCard,
   ));
 });
 // --- Debug helpers (console) ---
