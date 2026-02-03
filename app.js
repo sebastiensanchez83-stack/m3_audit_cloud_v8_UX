@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.5";
+const APP_VERSION = "standalone-2.5.1";
 const DB_NAME = "m3_audit_standalone";
 const DB_VERSION = 1;
 const STORE_AUDITS = "audits";
@@ -59,7 +59,6 @@ const I18N = {
     adminPanel: "Administration",
     adminUsersNav: "Users",
     adminBaseNav: "Base audit",
-    adminAuditsNav: "Audits",
     adminPanelHelp: "Invitations et gestion des accès.",
     inviteUserTitle: "Inviter un utilisateur",
 usersTitle: "Users",
@@ -252,7 +251,6 @@ criteriaCount: "Critères",
     adminPanel: "Administration",
     adminUsersNav: "Users",
     adminBaseNav: "Audit base",
-    adminAuditsNav: "Audits",
     adminPanelHelp: "Invites and access management.",
     inviteUserTitle: "Invite a user",
 usersTitle: "Users",
@@ -592,7 +590,7 @@ function topBar({title, subtitle, right} = {}){
           ? h("button",{class:"btn btn--ghost", onclick: async ()=>{ await signOut(); showToast(t("signedOut")); go("#/login"); }}, t("signOut"))
           : h("a",{class:"btn btn--ghost", href:"#/login"}, t("signIn"))
         );
-        return h("div",{class:"topActions"}, langSel, userPill || h("div",{}), (AUTH && AUTH.isAdmin) ? h("div",{class:"adminLinks"}, h("a",{class:"btn btn--ghost", href:"#/users"}, t("adminUsersNav")), h("a",{class:"btn btn--ghost", href:"#/admin/audits"}, t("adminAuditsNav")), h("a",{class:"btn btn--ghost", href:"#/base"}, t("adminBaseNav"))) : h("div",{}), right || h("div",{}), authBtn || h("div",{}));
+        return h("div",{class:"topActions"}, langSel, userPill || h("div",{}), (AUTH && AUTH.isAdmin) ? h("div",{class:"adminLinks"}, h("a",{class:"btn btn--ghost", href:"#/users"}, t("adminUsersNav")), h("a",{class:"btn btn--ghost", href:"#/base"}, t("adminBaseNav"))) : h("div",{}), right || h("div",{}), authBtn || h("div",{}));
       })()
     )
   );
@@ -674,6 +672,7 @@ const SUPABASE_ANON_KEY = ENV.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const SUPABASE_BUCKET = ENV.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "audit-photos";
 const APP_URL = (ENV.APP_URL || "").endsWith('/') ? (ENV.APP_URL || "") : ((ENV.APP_URL || "") ? (ENV.APP_URL || "") + '/' : "");
 const REPORT_TTL_DAYS = Number.parseInt(ENV.REPORT_LINK_DEFAULT_TTL_DAYS || "90", 10);
+const FORCE_PWD_KEY = 'm3_force_pwd_update';
 
 function appBaseUrl(){
   // Prefer configured APP_URL (ends with /), fallback to current origin/path
@@ -695,7 +694,17 @@ function getParamAnywhere(key){
     const v2 = qs.get(key);
     if (v2) return v2;
   }
-  return null;
+    // Fallback: sometimes Supabase puts params directly in the hash (e.g. #access_token=...&type=recovery)
+  try{
+    const h = window.location.hash || '';
+    if (h && h.startsWith('#') && !h.startsWith('#/')){
+      const qs3 = new URLSearchParams(h.slice(1));
+      const v3 = qs3.get(key);
+      if (v3) return v3;
+    }
+  }catch{}
+
+return null;
 }
 
 async function ensureRecoverySession(){
@@ -850,7 +859,7 @@ async function initSupabase(){
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true
+      detectSessionInUrl: false
     }
   });
   // keep local auth state updated
@@ -958,8 +967,11 @@ async function sbGetAudit(auditId){
   const user = await sbRequireUser();
   await refreshAdminFlag();
 
-  let q = sb.from("v8_audits").select("data,user_id").eq("audit_id", auditId);
-  const { data, error } = await q.maybeSingle();
+  const { data, error } = await sb
+    .from("v8_audits")
+    .select("data,user_id")
+    .eq("audit_id", auditId)
+    .maybeSingle();
   if (error) throw error;
   const audit = data?.data || null;
   if (audit && data?.user_id) audit.__ownerUserId = data.user_id;
@@ -976,8 +988,7 @@ async function sbListAudits(){
     .from("v8_audits")
     .select("audit_id,user_id,site_name,auditor_name,facilities,updated_at");
 
-  if (!AUTH.isAdmin) q = q.eq("user_id", user.id);
-
+  // RLS handles owner/collaborator/admin visibility
   const { data, error } = await q.order("updated_at", { ascending: false }).limit(200);
   if (error) throw error;
 
@@ -1034,63 +1045,17 @@ async function sbUploadPhoto(auditId, criterionId, photoId, dataUrl, ownerUserId
   const user = AUTH.user || (await sb.auth.getUser()).data.user;
   if (!user) throw new Error('Not authenticated');
   const ext = 'jpg';
+  const ownerId = ownerUserId || user.id;
+  const filePath = `${ownerId}/${auditId}/${criterionId}/${photoId}.${ext}`;
   const blob = dataUrlToBlob(dataUrl);
-
-  // Prefer to store under audit owner (keeps everything grouped),
-  // but some Storage policies only allow uploading under auth.uid() folder.
-  const candidates = [];
-  if (ownerUserId) candidates.push(String(ownerUserId));
-  candidates.push(String(user.id));
-  const tried = new Set();
-
-  let lastErr = null;
-  for (const folder of candidates){
-    if (!folder || tried.has(folder)) continue;
-    tried.add(folder);
-    const filePath = `${folder}/${auditId}/${criterionId}/${photoId}.${ext}`;
-    const { error } = await sb.storage
-      .from(SUPABASE_BUCKET)
-      .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
-    if (!error){
-      const { data } = sb.storage.from(SUPABASE_BUCKET).getPublicUrl(filePath);
-      return data.publicUrl;
-    }
-    lastErr = error;
-  }
-  throw lastErr || new Error("Upload failed");
-}
-
-
-
-// ---- Collaboration RPC helpers (criterion-level patch) ----
-async function sbAcquireLock(auditId, criterionId, ttlSeconds=180){
-  const sb = await initSupabase();
-  if (!sb) throw new Error("Supabase not initialized");
-  const { data, error } = await sb.rpc('v8_acquire_lock', { p_audit_id: auditId, p_criterion_id: criterionId, p_ttl_seconds: ttlSeconds });
+  const { error } = await sb.storage
+    .from(SUPABASE_BUCKET)
+    .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
   if (error) throw error;
-  return data;
+  const { data } = sb.storage.from(SUPABASE_BUCKET).getPublicUrl(filePath);
+  return data.publicUrl;
 }
-async function sbReleaseLock(auditId, criterionId){
-  const sb = await initSupabase();
-  if (!sb) throw new Error("Supabase not initialized");
-  const { data, error } = await sb.rpc('v8_release_lock', { p_audit_id: auditId, p_criterion_id: criterionId });
-  if (error) throw error;
-  return data;
-}
-async function sbSetResponse(auditId, criterionId, response){
-  const sb = await initSupabase();
-  if (!sb) throw new Error("Supabase not initialized");
-  const { data, error } = await sb.rpc('v8_set_response', { p_audit_id: auditId, p_criterion_id: criterionId, p_response: response || {} });
-  if (error) throw error;
-  return data;
-}
-async function sbNextPhotoId(auditId){
-  const sb = await initSupabase();
-  if (!sb) throw new Error("Supabase not initialized");
-  const { data, error } = await sb.rpc('v8_next_photo_id', { p_audit_id: auditId });
-  if (error) throw error;
-  return data;
-}
+
 // ---- Unified DB API used by the app ----
 async function dbPutAudit(audit){
   if (ONLINE_ENABLED) return sbUpsertAudit(audit);
@@ -1636,7 +1601,7 @@ async function viewForgotPassword(){
     }
     try{
       const sb = await initSupabase();
-      const redirectTo = `${appBaseUrl()}?flow=recovery`;
+      const redirectTo = `${appBaseUrl()}#/update-password`;
       const { error } = await sb.auth.resetPasswordForEmail(e, { redirectTo });
       if (error) throw error;
       msg.textContent = t('resetEmailSent');
@@ -1698,17 +1663,7 @@ async function viewUpdatePassword(){
       const { error } = await sb.auth.updateUser({ password: p1 });
       if (error) throw error;
       showToast(t('passwordUpdated'));
-
-      // If this password update came from an audit collaboration invite, accept it now (best-effort)
-      try{
-        const sp = new URL(location.href).searchParams;
-        const flow = (sp.get("flow") || "").toLowerCase();
-        const auditId = sp.get("audit_id");
-        if (flow === "invite" && auditId){
-          await callNetlifyFn("accept-audit-invite", { audit_id: auditId });
-        }
-      }catch(_e){}
-
+      try{ sessionStorage.removeItem(FORCE_PWD_KEY); }catch{}
       // Safety: sign out, then ask user to sign in again
       await signOut();
       go('#/login');
@@ -1802,6 +1757,7 @@ async function viewStart(){
     go(`#/audit/${data.auditId}`);
   }}, t("importAuditProject"));
 
+  // Admin invitation moved to Users page (#/users)
   const auditList = h("div",{class:"card"},
     h("div",{class:"row-between"},
       h("div",{class:"h3"}, t("auditsExisting")),
@@ -1887,6 +1843,43 @@ async function viewAdminUsers() {
   if (!AUTH.isAdmin) return viewStart();
 
   let state = { loading: true, error: "", users: [] };
+  // --- Invite form (moved here from Home) ---
+  const inviteEmailInUsersPage = h('input',{type:'email', placeholder: lt('inviteEmailPh'), style:'min-width:260px; flex:2'});
+  const inviteRoleInUsersPage = h('select',{style:'min-width:160px; flex:1'},
+    h('option',{value:'auditor'}, lt('roleAuditor')),
+    h('option',{value:'admin'}, lt('roleAdmin'))
+  );
+  const inviteMsgInUsersPage = h('div',{class:'small muted'});
+  async function doInviteFromUsersPage(){
+    inviteMsgInUsersPage.textContent = '';
+    let btnText = '';
+    const email = String(inviteEmailInUsersPage.value||'').trim().toLowerCase();
+    const role = String(inviteRoleInUsersPage.value||'auditor');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      inviteMsgInUsersPage.textContent = lt('invalidEmail');
+      return;
+    }
+    try{
+      btnText = inviteBtnInUsersPage.textContent;
+      inviteBtnInUsersPage.disabled = true;
+      inviteBtnInUsersPage.textContent = lt('sendingInvite');
+      const out = await inviteUserByEmail(email, role);
+      showToast(lt('inviteSent'));
+      inviteEmailInUsersPage.value = '';
+      // If backend returns an action_link, show it (fallback if SMTP not configured)
+      if (out && (out.action_link || out.actionLink)){
+        inviteMsgInUsersPage.textContent = 'Lien: ' + (out.action_link || out.actionLink);
+      }
+      await load();
+    }catch(e){
+      inviteMsgInUsersPage.textContent = (e && e.message) ? e.message : String(e);
+    }finally{
+      inviteBtnInUsersPage.disabled = false;
+      inviteBtnInUsersPage.textContent = btnText;
+    }
+  }
+  const inviteBtnInUsersPage = h('button',{class:'btn', onclick: doInviteFromUsersPage}, lt('sendInvite'));
+
 
   async function load() {
     state.loading = true;
@@ -1939,37 +1932,11 @@ async function viewAdminUsers() {
           )
         ),
         state.error ? h("div", { class: "card", style: "border:1px solid #a33" }, h("b", {}, "Error: "), state.error) : null,
-
-        // Invite new user (moved here from home)
-        h("div",{class:"card"},
-          h("div",{class:"h3"}, t("inviteUserTitle")),
-          h("div",{class:"small muted", style:"margin-top:6px"}, t("adminPanelHelp")),
-          (()=>{
-            const emailIn = h("input",{type:"email", placeholder: t("inviteEmailPh"), style:"flex:2; min-width:260px"});
-            const roleSel = h("select",{style:"flex:1; min-width:160px"},
-              h("option",{value:"auditor"}, t("roleAuditor")),
-              h("option",{value:"admin"}, t("roleAdmin"))
-            );
-            const inviteBtn = h("button",{class:"primary", onclick: async ()=>{
-              const email = String(emailIn.value||"").trim();
-              const role = String(roleSel.value||"auditor");
-              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ alert(t("invalidEmail")); return; }
-              const prev = inviteBtn.textContent;
-              inviteBtn.disabled = true;
-              inviteBtn.textContent = t("sendingInvite");
-              try{
-                await inviteUserByEmail(email, role);
-                alert(t("inviteSent"));
-                emailIn.value = "";
-              }catch(e){
-                alert(t("inviteFailed") + " — " + (e?.message||e));
-              }finally{
-                inviteBtn.disabled = false;
-                inviteBtn.textContent = prev;
-              }
-            }}, t("sendInvite"));
-            return h("div",{class:"row", style:"gap:8px; flex-wrap:wrap; margin-top:10px"}, emailIn, roleSel, inviteBtn);
-          })()
+        h("div", { class: "card" },
+          h("div", { class: "h3" }, lt("inviteUserTitle")),
+          h("div", { class: "small muted", style: "margin-top:6px" }, lt("adminPanelHelp")),
+          h("div", { class: "row", style: "gap:8px; flex-wrap:wrap; margin-top:10px" }, inviteEmailInUsersPage, inviteRoleInUsersPage, inviteBtnInUsersPage),
+          inviteMsgInUsersPage
         ),
 
         state.loading
@@ -2030,142 +1997,6 @@ async function viewAdminUsers() {
 
   paint();
   await load();
-}
-
-
-async function viewAdminAudits(){
-  if (!ONLINE_ENABLED) return viewStart();
-  if (!AUTH.user) return viewLogin();
-  await refreshAdminFlag();
-  if (!AUTH.isAdmin) return viewStart();
-
-  let state = { loading: true, error: "", audits: [], selected: null, collabs: [], invites: [] };
-
-  async function loadAudits(){
-    state.loading = true; state.error = ""; paint();
-    try{
-      state.audits = await sbListAudits();
-    }catch(e){
-      state.error = e.message || String(e);
-    }finally{
-      state.loading = false;
-      paint();
-    }
-  }
-
-  async function selectAudit(a){
-    state.selected = a;
-    state.collabs = [];
-    state.invites = [];
-    paint();
-    try{
-      const out = await callNetlifyFn("list-audit-collaborators", { audit_id: a.auditId });
-      state.collabs = out.collaborators || [];
-      state.invites = out.invites || [];
-    }catch(e){
-      state.error = e.message || String(e);
-    }
-    paint();
-  }
-
-  async function inviteToAudit(){
-    if (!state.selected) return;
-    const email = prompt((LANG==="en") ? "Invite auditor email:" : "Email de l’auditeur à inviter :");
-    if (!email) return;
-    const role = prompt((LANG==="en") ? "Role: auditor / viewer / lead" : "Rôle : auditor / viewer / lead", "auditor") || "auditor";
-    try{
-      await callNetlifyFn("invite-audit-collaborator", { audit_id: state.selected.auditId, email: email.trim(), role: role.trim() });
-      await selectAudit(state.selected);
-      showToast((LANG==="en") ? "Invite sent" : "Invitation envoyée");
-    }catch(e){
-      alert(e.message || String(e));
-    }
-  }
-
-  async function removeCollab(entry){
-    if (!state.selected) return;
-    if (!confirm((LANG==="en") ? "Remove access?" : "Retirer l’accès ?")) return;
-    try{
-      await callNetlifyFn("remove-audit-collaborator", { audit_id: state.selected.auditId, user_id: entry.user_id });
-      await selectAudit(state.selected);
-    }catch(e){
-      alert(e.message || String(e));
-    }
-  }
-
-  async function removeInvite(inv){
-    if (!state.selected) return;
-    if (!confirm((LANG==="en") ? "Cancel pending invite?" : "Annuler l’invitation en attente ?")) return;
-    try{
-      await callNetlifyFn("remove-audit-collaborator", { audit_id: state.selected.auditId, email: inv.email });
-      await selectAudit(state.selected);
-    }catch(e){
-      alert(e.message || String(e));
-    }
-  }
-
-  function paint(){
-    const left = h("div",{class:"card"},
-      h("div",{class:"row-between"},
-        h("div",{}, h("div",{class:"h3"}, (LANG==="en") ? "Audits" : "Audits"), h("div",{class:"small muted"}, (LANG==="en") ? "Manage collaborators per audit." : "Gérer les collaborateurs par audit.")),
-        h("div",{class:"row", style:"gap:8px"},
-          h("button",{class:"btn", onclick: ()=>go("#/")}, "←"),
-          h("button",{class:"btn", onclick: loadAudits}, (LANG==="en") ? "Refresh" : "Rafraîchir")
-        )
-      ),
-      state.loading ? h("div",{class:"small muted", style:"margin-top:10px"}, "Loading…") :
-      (state.audits && state.audits.length) ? h("div",{class:"list", style:"margin-top:10px"},
-        ...state.audits.map(a=>{
-          const meta = a.meta || {};
-          const isSel = state.selected && state.selected.auditId === a.auditId;
-          const updated = a.updatedAtISO ? new Date(a.updatedAtISO).toLocaleString() : "";
-          return h("div",{class:"item row-between", style: isSel ? "border:2px solid var(--primary)" : "", onclick: ()=>selectAudit(a)},
-            h("div",{},
-              h("div",{class:"h3"}, meta.siteName || "Unnamed site"),
-              h("div",{class:"small muted"}, `${meta.auditorName||"-"} • ${updated}${a.ownerUserId ? " • " + (emailForUserId(a.ownerUserId) || String(a.ownerUserId).slice(0,8)+"…") : ""}`)
-            ),
-            h("div",{class:"small muted"}, a.auditId.slice(0,8)+"…")
-          );
-        })
-      ) : h("div",{class:"small muted", style:"margin-top:10px"}, (LANG==="en") ? "No audits." : "Aucun audit.")
-    );
-
-    const right = !state.selected ? h("div",{class:"card"}, h("div",{class:"small muted"}, (LANG==="en") ? "Select an audit to manage access." : "Sélectionnez un audit pour gérer les accès.")) :
-      h("div",{class:"card"},
-        h("div",{class:"row-between"},
-          h("div",{}, h("div",{class:"h3"}, (LANG==="en") ? "Collaborators" : "Collaborateurs"), h("div",{class:"small muted"}, state.selected.meta?.siteName || "")),
-          h("button",{class:"btn", onclick: inviteToAudit}, (LANG==="en") ? "Invite" : "Inviter")
-        ),
-        h("div",{class:"hr"}),
-        h("div",{class:"h3", style:"margin-top:6px"}, (LANG==="en") ? "Active" : "Actifs"),
-        (state.collabs && state.collabs.length) ? h("div",{class:"list", style:"margin-top:8px"},
-          ...state.collabs.map(c=> h("div",{class:"item row-between"},
-            h("div",{}, h("div",{class:"h3"}, c.user_email || emailForUserId(c.user_id) || (String(c.user_id).slice(0,8)+"…")), h("div",{class:"small muted"}, `${c.role || "auditor"}`)),
-            h("button",{class:"btn btn--ghost", onclick: ()=>removeCollab(c)}, (LANG==="en") ? "Remove" : "Retirer")
-          ))
-        ) : h("div",{class:"small muted", style:"margin-top:8px"}, (LANG==="en") ? "No collaborators." : "Aucun collaborateur."),
-        h("div",{class:"h3", style:"margin-top:14px"}, (LANG==="en") ? "Pending invites" : "Invitations en attente"),
-        (state.invites && state.invites.length) ? h("div",{class:"list", style:"margin-top:8px"},
-          ...state.invites.filter(x=>!x.accepted_at).map(inv=> h("div",{class:"item row-between"},
-            h("div",{}, h("div",{class:"h3"}, inv.email), h("div",{class:"small muted"}, `${inv.role||"auditor"} • ${(inv.created_at?new Date(inv.created_at).toLocaleString():"")}`)),
-            h("button",{class:"btn btn--ghost", onclick: ()=>removeInvite(inv)}, (LANG==="en") ? "Cancel" : "Annuler")
-          ))
-        ) : h("div",{class:"small muted", style:"margin-top:8px"}, (LANG==="en") ? "No pending invites." : "Aucune invitation.")
-      );
-
-    setRoot(
-      h("div",{},
-        topBar({title: (LANG==="en") ? "Admin — Audits" : "Admin — Audits", subtitle: (LANG==="en") ? "Access management" : "Gestion des accès"}),
-        state.error ? h("div",{class:"wrap"}, h("div",{class:"card", style:"border:1px solid #a33"}, h("b",{},"Error: "), state.error)) : null,
-        h("div",{class:"wrap grid", style:"grid-template-columns: 1fr 1fr; gap:14px"},
-          left,
-          right
-        )
-      )
-    );
-  }
-
-  await loadAudits();
 }
 
 async function viewAdminBaseUpdate() {
@@ -2241,40 +2072,7 @@ async function viewAdminBaseUpdate() {
           )
         ),
         state.error ? h("div", { class: "card", style: "border:1px solid #a33" }, h("b", {}, "Error: "), state.error) : null,
-
-        // Invite new user (moved here from home)
-        h("div",{class:"card"},
-          h("div",{class:"h3"}, t("inviteUserTitle")),
-          h("div",{class:"small muted", style:"margin-top:6px"}, t("adminPanelHelp")),
-          (()=>{
-            const emailIn = h("input",{type:"email", placeholder: t("inviteEmailPh"), style:"flex:2; min-width:260px"});
-            const roleSel = h("select",{style:"flex:1; min-width:160px"},
-              h("option",{value:"auditor"}, t("roleAuditor")),
-              h("option",{value:"admin"}, t("roleAdmin"))
-            );
-            const inviteBtn = h("button",{class:"primary", onclick: async ()=>{
-              const email = String(emailIn.value||"").trim();
-              const role = String(roleSel.value||"auditor");
-              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ alert(t("invalidEmail")); return; }
-              const prev = inviteBtn.textContent;
-              inviteBtn.disabled = true;
-              inviteBtn.textContent = t("sendingInvite");
-              try{
-                await inviteUserByEmail(email, role);
-                alert(t("inviteSent"));
-                emailIn.value = "";
-              }catch(e){
-                alert(t("inviteFailed") + " — " + (e?.message||e));
-              }finally{
-                inviteBtn.disabled = false;
-                inviteBtn.textContent = prev;
-              }
-            }}, t("sendInvite"));
-            return h("div",{class:"row", style:"gap:8px; flex-wrap:wrap; margin-top:10px"}, emailIn, roleSel, inviteBtn);
-          })()
-        ),
-
-        h(
+                h(
           "div",
           { class: "card" },
           h("div", { class: "row", style: "gap:10px; flex-wrap:wrap; align-items:flex-end" },
@@ -2745,43 +2543,6 @@ async function viewCriterion(auditId, criterionId){
 
   const levelPill = h("span",{class:"pill"}, t("notSet"));
 
-  // --- Collaboration lock state (online collaborative editing) ---
-  let HAS_LOCK = true;
-  let LOCK_INFO = null;
-  let lockKeepAlive = null;
-  const lockStatus = h("div",{class:"small muted", style:"margin-top:8px"});
-  async function acquireLock(){
-    if (!ONLINE_ENABLED) return;
-    try{
-      LOCK_INFO = await sbAcquireLock(auditId, criterionId, 180);
-      HAS_LOCK = !!(LOCK_INFO && LOCK_INFO.ok);
-    }catch(e){
-      HAS_LOCK = false;
-      LOCK_INFO = { ok:false, error: (e && e.message) ? e.message : String(e) };
-    }
-    paintLock();
-    try{ if (typeof setEditable === 'function') setEditable(HAS_LOCK); }catch(_e){}
-  }
-  async function releaseLock(){
-    if (!ONLINE_ENABLED) return;
-    try{ await sbReleaseLock(auditId, criterionId); }catch(_e){}
-  }
-  function paintLock(){
-    if (!ONLINE_ENABLED){ lockStatus.textContent = ""; return; }
-    if (HAS_LOCK){
-      const exp = LOCK_INFO?.expiresAt ? new Date(LOCK_INFO.expiresAt).toLocaleTimeString() : "";
-      lockStatus.textContent = (LANG==="en")
-        ? `Editing lock acquired${exp?` (expires ${exp})`:""}`
-        : `Verrou acquis${exp?` (expire ${exp})`:""}`;
-    }else{
-      const by = (LOCK_INFO && (LOCK_INFO.lockedByEmail || LOCK_INFO.lockedBy)) ? (LOCK_INFO.lockedByEmail || String(LOCK_INFO.lockedBy).slice(0,8)+"…") : "";
-      const exp = LOCK_INFO?.expiresAt ? new Date(LOCK_INFO.expiresAt).toLocaleTimeString() : "";
-      lockStatus.textContent = (LANG==="en")
-        ? `Read-only: currently edited by ${by}${exp?` (until ${exp})`:""}`
-        : `Lecture seule : en cours d’édition par ${by}${exp?` (jusqu’à ${exp})`:""}`;
-    }
-  }
-
   // Score chips (better on Android)
   const scoreChips = h("div",{class:"scoreChips"});
   const chipBtns = [];
@@ -2867,25 +2628,9 @@ async function viewCriterion(auditId, criterionId){
       weight: c.weight
     };
     next.updatedAtISO = new Date().toISOString();
-    if (ONLINE_ENABLED){
-      if (!HAS_LOCK) return alert((LANG==="en") ? "This criterion is locked by another auditor." : "Ce critère est verrouillé par un autre auditeur.");
-      try{
-        await sbSetResponse(auditId, criterionId, next.responses[criterionId]);
-      }catch(e){
-        return alert((e && e.message) ? e.message : String(e));
-      }
-    }else{
-      await dbPutAudit(next);
-    }
-
-    // Update local snapshot for the current screen
-    row.responses = row.responses || {};
-    row.responses[criterionId] = next.responses[criterionId];
-    responses[criterionId] = next.responses[criterionId];
-
+    await dbPutAudit(next);
     showToast(t("toastSaved"));
     // Auto-advance within the same filtered order
-    if (ONLINE_ENABLED){ await releaseLock(); try{ clearInterval(lockKeepAlive); }catch(_e){} }
     if (nextId) return go(`#/criterion/${auditId}/${encodeURIComponent(nextId)}`);
     return go(`#/audit/${auditId}`);
   }
@@ -2930,19 +2675,9 @@ async function viewCriterion(auditId, criterionId){
   photoInput.addEventListener("change", async ()=>{
     const f = photoInput.files && photoInput.files[0];
     if (!f) return;
-    if (ONLINE_ENABLED && !HAS_LOCK){
-      alert((LANG==="en") ? "This criterion is locked by another auditor." : "Ce critère est verrouillé par un autre auditeur.");
-      return;
-    }
-
     const now = new Date();
-    let photoId = null;
-    if (ONLINE_ENABLED){
-      try{ photoId = await sbNextPhotoId(auditId); }catch(e){ photoId = computeNextPhotoId(); }
-    }else{
-      photoId = computeNextPhotoId();
-      row.photoSeq = (row.photoSeq || 1) + 1;
-    }
+    const photoId = computeNextPhotoId();
+    row.photoSeq = (row.photoSeq || 1) + 1;
 
     const blob = f.slice(0, f.size, f.type || "image/jpeg");
     const lines = [
@@ -2970,15 +2705,9 @@ async function viewCriterion(auditId, criterionId){
     });
     next.responses[criterionId] = {...cur, photos};
     next.updatedAtISO = new Date().toISOString();
-    if (ONLINE_ENABLED){
-      try{ await sbSetResponse(auditId, criterionId, next.responses[criterionId]); }catch(e){ console.warn(e); }
-    }else{
-      await dbPutAudit(next);
-    }
+    await dbPutAudit(next);
 
     // refresh local snapshot
-    row.responses = row.responses || {};
-    row.responses[criterionId] = next.responses[criterionId];
     responses[criterionId] = next.responses[criterionId];
     renderPhotos();
     photoInput.value = "";
@@ -3001,36 +2730,12 @@ async function viewCriterion(auditId, criterionId){
   chipBtns.forEach(b=> b.disabled = naChk.checked);
   if (naChk.checked) setScore(null); else updateLevelPill();
 
-
-  // Acquire lock immediately (online collaborative editing)
-  if (ONLINE_ENABLED){
-    await acquireLock();
-    // refresh lock periodically while staying on this criterion
-    lockKeepAlive = setInterval(()=>{ acquireLock(); }, 45000);
-  }
-
-  function setEditable(canEdit){
-    // disable all inputs when read-only
-    const disabled = !canEdit;
-    naChk.disabled = disabled;
-    naReason.disabled = disabled || !naChk.checked;
-    comments.disabled = disabled;
-    gap.disabled = disabled;
-    action.disabled = disabled;
-    evidenceRef.disabled = disabled;
-    docId.disabled = disabled;
-    chipBtns.forEach(b=> b.disabled = disabled || naChk.checked);
-    photoInput.disabled = disabled;
-  }
-  if (ONLINE_ENABLED) setEditable(HAS_LOCK);
-
   // --- Cards ---
   const headerCard = h("div",{class:"card"},
     h("div",{class:"cardHeader"},
       h("div",{},
         h("div",{class:"h2"}, `${c.id} — ${c.title}`),
         h("div",{class:"small muted"}, `${c.facility} • ${c.pillar} • ${c.parentGroup}`),
-        (ONLINE_ENABLED ? lockStatus : null),
         c.description ? h("div",{class:"small", style:"margin-top:10px; white-space:pre-wrap"}, c.description) : null
       ),
       levelPill
@@ -3119,11 +2824,11 @@ async function viewCriterion(auditId, criterionId){
   );
   renderPhotos();
 
-  const backBtn = h("button",{onclick: async ()=> { if (ONLINE_ENABLED){ await releaseLock(); try{ clearInterval(lockKeepAlive); }catch(_e){} } go(`#/audit/${auditId}`); }}, t("back"));
-  const saveBtn = h("button",{class:"primary", onclick: onSave, disabled: (ONLINE_ENABLED && !HAS_LOCK)}, t("saveNext"));
+  const backBtn = h("button",{onclick: ()=> go(`#/audit/${auditId}`)}, t("back"));
+  const saveBtn = h("button",{class:"primary", onclick: onSave}, t("saveNext"));
 
-  const prevBtn = h("button",{onclick: async ()=> { if (!prevId) return; if (ONLINE_ENABLED){ await releaseLock(); try{ clearInterval(lockKeepAlive); }catch(_e){} } go(`#/criterion/${auditId}/${encodeURIComponent(prevId)}`); }, disabled: !prevId}, t("prev"));
-  const nextBtn = h("button",{onclick: async ()=> { if (!nextId) return; if (ONLINE_ENABLED){ await releaseLock(); try{ clearInterval(lockKeepAlive); }catch(_e){} } go(`#/criterion/${auditId}/${encodeURIComponent(nextId)}`); }, disabled: !nextId}, t("next"));
+  const prevBtn = h("button",{onclick: ()=> prevId ? go(`#/criterion/${auditId}/${encodeURIComponent(prevId)}`) : null, disabled: !prevId}, t("prev"));
+  const nextBtn = h("button",{onclick: ()=> nextId ? go(`#/criterion/${auditId}/${encodeURIComponent(nextId)}`) : null, disabled: !nextId}, t("next"));
 
   const actions = h("div",{class:"sticky-actions wrap"},
     h("div",{class:"card row-between"},
@@ -3263,7 +2968,7 @@ async function viewReport(auditId){
 
 
   const printBtn = h("button",{onclick: ()=> window.print()}, t("printPdf"));
-  const backBtn = h("button",{onclick: async ()=> { if (ONLINE_ENABLED){ await releaseLock(); try{ clearInterval(lockKeepAlive); }catch(_e){} } go(`#/audit/${auditId}`); }}, t("back"));
+  const backBtn = h("button",{onclick: ()=> go(`#/audit/${auditId}`)}, t("back"));
   
 const exportJsonBtn = h("button",{onclick: ()=> downloadText(`${t("exportFilenameBase")}_${(row.meta.siteName||"site").replaceAll(" ","_")}.json`, JSON.stringify(row,null,2), "application/json")}, t("exportAuditProject"));
 
@@ -3547,28 +3252,36 @@ async function render(){ await route(); }
 
 async function route(){
   updateFooter();
-
-  // Supabase email links often land as:  https://.../?flow=recovery#access_token=...&type=recovery
-  // Our router expects "#/..." so we normalize the fragment once, then let the router continue.
-  if (ONLINE_ENABLED){
-    const h = String(location.hash || "");
-    if (h && !h.startsWith("#/") && /access_token=/.test(h)){
-      const frag = h.slice(1); // remove leading '#'
-      // Keep existing query string (e.g., flow=recovery / flow=invite / audit_id=...)
-      location.hash = "#/update-password?" + frag;
-      return;
+  const parts = parseHash();
+  // Normalize Supabase auth callbacks that arrive as token-only hash (e.g. #access_token=...&type=recovery)
+  const rawHash = window.location.hash || '';
+  if (rawHash && rawHash.startsWith('#') && !rawHash.startsWith('#/') && (rawHash.includes('access_token=') || rawHash.includes('refresh_token=') || rawHash.includes('type=') || rawHash.includes('error='))){
+    const params = rawHash.slice(1);
+    const qs = new URLSearchParams(params);
+    const typ = (qs.get('type') || '').toLowerCase();
+    const target = (typ === 'recovery' || typ === 'invite') ? '#/update-password' : '#/';
+    if (typ === 'recovery' || typ === 'invite'){
+      try{ sessionStorage.setItem(FORCE_PWD_KEY, typ); }catch{}
     }
-
-    // If user lands with ?flow=recovery or ?flow=invite but no route, force update-password
-    const sp = new URL(location.href).searchParams;
-    const flow = (sp.get("flow") || "").toLowerCase();
-    if ((flow === "recovery" || flow === "invite") && (!h || h === "#" || h === "#/")){
-      location.hash = "#/update-password";
-      return;
-    }
+    window.location.hash = target + '?' + params;
+    return;
   }
 
-  const parts = parseHash();
+  // Force password update after recovery/invite until completed
+  const linkType = String(getParamAnywhere('type') || '').toLowerCase();
+  if (linkType === 'recovery' || linkType === 'invite'){
+    try{ sessionStorage.setItem(FORCE_PWD_KEY, linkType); }catch{}
+  }
+  let force = null;
+  try{ force = sessionStorage.getItem(FORCE_PWD_KEY); }catch{}
+  if (force && !['update-password','forgot-password','login'].includes(parts[0])){
+    // Preserve any hash query params (code/access_token/refresh_token/type)
+    const h = window.location.hash || '';
+    const q = h.includes('?') ? h.slice(h.indexOf('?')+1) : '';
+    window.location.hash = '#/update-password' + (q ? ('?' + q) : '');
+    return;
+  }
+
 
   // Public report links (no login)
   if (parts[0] === "public" && parts[1]){
@@ -3594,7 +3307,6 @@ if (parts[0] === "users") return viewAdminUsers();
 if (parts[0] === "admin" && parts[1] === "users") return viewAdminUsers();
 if (parts[0] === "base") return viewAdminBaseUpdate();
 if (parts[0] === "admin" && parts[1] === "base") return viewAdminBaseUpdate();
-if (parts[0] === "admin" && parts[1] === "audits") return viewAdminAudits();
 return viewStart();
 }
 
