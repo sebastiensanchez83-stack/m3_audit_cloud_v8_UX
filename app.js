@@ -2,10 +2,19 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.5";
+const APP_VERSION = "standalone-2.5.3";
 const DB_NAME = "m3_audit_standalone";
 const DB_VERSION = 1;
 const STORE_AUDITS = "audits";
+
+// Certification thresholds (editable via Admin import)
+const DEFAULT_CERT_LEVELS = [
+  { level_key: "horizon", display_name: "Horizon", global_floor: 0.60, pillar_floor: 0.50, sort_order: 1, is_active: true },
+  { level_key: "regatta", display_name: "Regatta", global_floor: 0.70, pillar_floor: 0.60, sort_order: 2, is_active: true },
+  { level_key: "flagship", display_name: "Flagship", global_floor: 0.80, pillar_floor: 0.70, sort_order: 3, is_active: true },
+  { level_key: "sovereign", display_name: "Sovereign", global_floor: 0.90, pillar_floor: 0.80, sort_order: 4, is_active: true },
+];
+let CERT_LEVELS_CACHE = null;
 
 /* ---------- i18n (FR/EN) ---------- */
 const I18N = {
@@ -182,15 +191,19 @@ criteriaCount: "Critères",
     reportScoresPillar: "Scores par pilier",
     reportScoresFacilities: "Scores par Facilities",
     reportNC: "Registre NC",
-    certificationResult: "Résultat de certification",
-    certificationLevel: "Niveau",
-    certificationFloors: "Seuils (Global / Pilier min)",
-    certificationAchieved: "Niveau atteint",
-    certificationNotAchieved: "Non atteint",
-    filterNCFacility: "Facility",
-    filterNCPillar: "Pilier",
-    filterNCLevel: "Niveau NC",
-    allFilters: "Tous",
+    certLevelLabel: "Certification",
+    certPillarMinLabel: "Min piliers",
+    certThresholdsLabel: "Seuils",
+    certNotQualified: "Non qualifié",
+    certImportTitle: "Niveaux de certification",
+    certImportHelp: "Importer les seuils depuis la feuille Executive_Note (colonnes A-C).",
+    parseCertLevels: "Analyser niveaux",
+    uploadCertLevels: "Mettre à jour niveaux",
+    certLevelsCount: "Niveaux",
+    ncFilterFacility: "Facility",
+    ncFilterPillar: "Pilier",
+    ncFilterLevel: "Niveau NC",
+    all: "Tous",
     overallWeightedScore: "Score pondéré global",
     criteriaLabel: "Critères",
     ncLabel: "NC",
@@ -401,15 +414,19 @@ criteriaCount: "Criteria",
     reportScoresPillar: "Scores by pillar",
     reportScoresFacilities: "Scores by facility",
     reportNC: "NC register",
-    certificationResult: "Certification result",
-    certificationLevel: "Level",
-    certificationFloors: "Floors (Global / Min pillar)",
-    certificationAchieved: "Achieved level",
-    certificationNotAchieved: "Not achieved",
-    filterNCFacility: "Facility",
-    filterNCPillar: "Pillar",
-    filterNCLevel: "NC level",
-    allFilters: "All",
+    certLevelLabel: "Certification",
+    certPillarMinLabel: "Min pillars",
+    certThresholdsLabel: "Thresholds",
+    certNotQualified: "Not qualified",
+    certImportTitle: "Certification levels",
+    certImportHelp: "Import thresholds from Executive_Note sheet (columns A-C).",
+    parseCertLevels: "Parse levels",
+    uploadCertLevels: "Update levels",
+    certLevelsCount: "Levels",
+    ncFilterFacility: "Facility",
+    ncFilterPillar: "Pillar",
+    ncFilterLevel: "NC level",
+    all: "All",
     overallWeightedScore: "Overall weighted score",
     criteriaLabel: "Criteria",
     ncLabel: "NC",
@@ -690,6 +707,7 @@ const SUPABASE_ANON_KEY = ENV.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const SUPABASE_BUCKET = ENV.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "audit-photos";
 const APP_URL = (ENV.APP_URL || "").endsWith('/') ? (ENV.APP_URL || "") : ((ENV.APP_URL || "") ? (ENV.APP_URL || "") + '/' : "");
 const REPORT_TTL_DAYS = Number.parseInt(ENV.REPORT_LINK_DEFAULT_TTL_DAYS || "90", 10);
+const FORCE_PWD_KEY = 'm3_force_pwd_update';
 
 function appBaseUrl(){
   // Prefer configured APP_URL (ends with /), fallback to current origin/path
@@ -711,7 +729,17 @@ function getParamAnywhere(key){
     const v2 = qs.get(key);
     if (v2) return v2;
   }
-  return null;
+    // Fallback: sometimes Supabase puts params directly in the hash (e.g. #access_token=...&type=recovery)
+  try{
+    const h = window.location.hash || '';
+    if (h && h.startsWith('#') && !h.startsWith('#/')){
+      const qs3 = new URLSearchParams(h.slice(1));
+      const v3 = qs3.get(key);
+      if (v3) return v3;
+    }
+  }catch{}
+
+return null;
 }
 
 async function ensureRecoverySession(){
@@ -866,7 +894,7 @@ async function initSupabase(){
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true
+      detectSessionInUrl: false
     }
   });
   // keep local auth state updated
@@ -948,6 +976,13 @@ async function sbUpsertAudit(audit){
   if (!sb) throw new Error('Supabase non configuré');
   const user = await sbRequireUser();
 
+// Prevent collaborators from overwriting the whole audit row (RLS will block anyway).
+// Collaborators must save per-criterion via RPC (v8_set_response).
+if (!AUTH.isAdmin && audit && audit.__ownerUserId && audit.__ownerUserId !== user.id) {
+  throw new Error("Accès refusé : vous n'êtes pas propriétaire de cet audit. (Collaboration : sauvegarde par critère uniquement.)");
+}
+
+
   const facilities = (audit.meta && Array.isArray(audit.meta.facilitiesAudited)) ? audit.meta.facilitiesAudited : [];
 
   const ownerId = (AUTH.isAdmin && audit.__ownerUserId) ? audit.__ownerUserId : user.id;
@@ -963,7 +998,7 @@ async function sbUpsertAudit(audit){
     data: audit
   };
 
-  const { error } = await sb.from('v8_audits').upsert(payload, { onConflict: 'user_id,audit_id' });
+  const { error } = await sb.from('v8_audits').upsert(payload, { onConflict: 'audit_id' });
   if (error) throw error;
   return true;
 }
@@ -974,10 +1009,11 @@ async function sbGetAudit(auditId){
   const user = await sbRequireUser();
   await refreshAdminFlag();
 
-  let q = sb.from("v8_audits").select("data,user_id").eq("audit_id", auditId);
-  if (!AUTH.isAdmin) q = q.eq("user_id", user.id);
-
-  const { data, error } = await q.maybeSingle();
+  const { data, error } = await sb
+    .from("v8_audits")
+    .select("data,user_id")
+    .eq("audit_id", auditId)
+    .maybeSingle();
   if (error) throw error;
   const audit = data?.data || null;
   if (audit && data?.user_id) audit.__ownerUserId = data.user_id;
@@ -994,8 +1030,7 @@ async function sbListAudits(){
     .from("v8_audits")
     .select("audit_id,user_id,site_name,auditor_name,facilities,updated_at");
 
-  if (!AUTH.isAdmin) q = q.eq("user_id", user.id);
-
+  // RLS handles owner/collaborator/admin visibility
   const { data, error } = await q.order("updated_at", { ascending: false }).limit(200);
   if (error) throw error;
 
@@ -1047,6 +1082,45 @@ async function sbGetPublicReport(token){
 }
 
 
+async function sbGetCertLevels(){
+  // Can be called with anon; will fallback if blocked by RLS
+  const sb = await initSupabase();
+  if (!sb) return DEFAULT_CERT_LEVELS;
+  const { data, error } = await sb
+    .from("v8_certification_levels")
+    .select("level_key,display_name,global_floor,pillar_floor,sort_order,is_active")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true });
+
+  if (error || !Array.isArray(data) || !data.length) return DEFAULT_CERT_LEVELS;
+  return data;
+}
+
+async function loadCertLevels(){
+  if (CERT_LEVELS_CACHE) return CERT_LEVELS_CACHE;
+  try{
+    CERT_LEVELS_CACHE = await sbGetCertLevels();
+  }catch(e){
+    CERT_LEVELS_CACHE = DEFAULT_CERT_LEVELS;
+  }
+  return CERT_LEVELS_CACHE;
+}
+
+function computeCertification(overallPct, byPillarArr, levels){
+  const global = (Number(overallPct)||0) / 100;
+  let minPillar = 0;
+  if (Array.isArray(byPillarArr) && byPillarArr.length){
+    minPillar = Math.min(...byPillarArr.map(x=> (Number(x.pct)||0)/100 ));
+  }
+  const sorted = (levels||[]).slice().filter(x=> x && x.is_active !== false).sort((a,b)=> (Number(a.sort_order)||0) - (Number(b.sort_order)||0));
+  let best = null;
+  for (const lv of sorted){
+    if (global >= Number(lv.global_floor||0) && minPillar >= Number(lv.pillar_floor||0)) best = lv;
+  }
+  return { best, global, minPillar };
+}
+
+
 async function sbUploadPhoto(auditId, criterionId, photoId, dataUrl, ownerUserId=null){
   const sb = await initSupabase();
   const user = AUTH.user || (await sb.auth.getUser()).data.user;
@@ -1062,6 +1136,60 @@ async function sbUploadPhoto(auditId, criterionId, photoId, dataUrl, ownerUserId
   const { data } = sb.storage.from(SUPABASE_BUCKET).getPublicUrl(filePath);
   return data.publicUrl;
 }
+
+
+/* ---- Collaboration RPC helpers (locks + criterion-level save) ---- */
+async function sbAcquireLock(auditId, criterionId, ttlSeconds=120){
+  const sb = await initSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  await sbRequireUser();
+  const { data, error } = await sb.rpc('v8_acquire_lock', {
+    p_audit_id: auditId,
+    p_criterion_id: criterionId,
+    p_ttl_seconds: ttlSeconds
+  });
+  if (error) throw error;
+  return data;
+}
+
+async function sbReleaseLock(auditId, criterionId){
+  const sb = await initSupabase();
+  if (!sb) return false;
+  try{
+    await sbRequireUser();
+    const { data, error } = await sb.rpc('v8_release_lock', {
+      p_audit_id: auditId,
+      p_criterion_id: criterionId
+    });
+    if (error) throw error;
+    return !!data;
+  }catch(e){
+    return false;
+  }
+}
+
+async function sbSetResponse(auditId, criterionId, responseObj){
+  const sb = await initSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  await sbRequireUser();
+  const { data, error } = await sb.rpc('v8_set_response', {
+    p_audit_id: auditId,
+    p_criterion_id: criterionId,
+    p_response: responseObj || {}
+  });
+  if (error) throw error;
+  return !!data;
+}
+
+async function sbNextPhotoId(auditId){
+  const sb = await initSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  await sbRequireUser();
+  const { data, error } = await sb.rpc('v8_next_photo_id', { p_audit_id: auditId });
+  if (error) throw error;
+  return data;
+}
+
 
 // ---- Unified DB API used by the app ----
 async function dbPutAudit(audit){
@@ -1132,14 +1260,6 @@ async function ensureXLSX() {
   return window.XLSX;
 }
 
-function slugify(s){
-  return String(s||"")
-    .toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
-    .replace(/[^a-z0-9]+/g,"-")
-    .replace(/^-+|-+$/g,"");
-}
-
 function normHeader(s) {
   return String(s || "")
     .trim()
@@ -1192,7 +1312,15 @@ async function parseCriteriaExcel(file) {
       owner: String(pick(r, headerMap, "owner")).trim(),
       weight: Number.isFinite(w) ? w : "",
       failSafe: String(pick(r, headerMap, "fail_safe")).trim(),
-      externalRequirement: String(pick(r, headerMap, "external_requirement")
+      externalRequirement: String(pick(r, headerMap, "external_requirement")).trim(),
+      crosswalk: String(pick(r, headerMap, "crosswalk_certifications")).trim(),
+      domain: String(pick(r, headerMap, "domain")).trim(),
+    });
+  }
+  return mapped;
+}
+
+
 
 async function parseCertLevelsExcel(file){
   const XLSX = await ensureXLSX();
@@ -1200,13 +1328,12 @@ async function parseCertLevelsExcel(file){
   const wb = XLSX.read(buf, { type: "array" });
   const ws = wb.Sheets["Executive_Note"] || wb.Sheets["Executive Note"] || wb.Sheets[wb.SheetNames[0]];
   if (!ws) return [];
-  // Read as array-of-arrays for simple scanning
   const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
   if (!aoa || !aoa.length) return [];
 
-  // Find header row containing "Certification level"
+  // find header row where col A == "Certification level"
   let headerRow = -1;
-  for (let i=0;i<Math.min(aoa.length, 80);i++){
+  for (let i=0;i<Math.min(aoa.length, 120);i++){
     const a = String((aoa[i] && aoa[i][0]) || "").trim().toLowerCase();
     if (a === "certification level"){
       headerRow = i;
@@ -1221,9 +1348,8 @@ async function parseCertLevelsExcel(file){
     if (!name) break;
     const gf = Number((aoa[i] && aoa[i][1]) || 0);
     const pf = Number((aoa[i] && aoa[i][2]) || 0);
-    const key = slugify(name);
     out.push({
-      level_key: key,
+      level_key: slugify(name),
       display_name: name.replace(/\s+/g," ").trim(),
       global_floor: Number.isFinite(gf) ? gf : 0,
       pillar_floor: Number.isFinite(pf) ? pf : 0,
@@ -1234,13 +1360,6 @@ async function parseCertLevelsExcel(file){
   return out;
 }
 
-).trim(),
-      crosswalk: String(pick(r, headerMap, "crosswalk_certifications")).trim(),
-      domain: String(pick(r, headerMap, "domain")).trim(),
-    });
-  }
-  return mapped;
-}
 
 
 async function loadCriteriaDB(){
@@ -1325,52 +1444,7 @@ function computeWeightedScore(criteria, responses, filterFn){
   }
   const pct = sumW ? (sumPts / (5 * sumW)) * 100 : 0;
   return { sumW, sumPts, pct: Math.round(pct*100)/100 };
-}/* ---------- Certification level (thresholds) ---------- */
-const DEFAULT_CERT_LEVELS = [
-  { level_key: "horizon", display_name: "Horizon", global_floor: 0.6, pillar_floor: 0.5, sort_order: 1, is_active: true },
-  { level_key: "regatta", display_name: "Regatta", global_floor: 0.7, pillar_floor: 0.6, sort_order: 2, is_active: true },
-  { level_key: "flagship", display_name: "Flagship", global_floor: 0.8, pillar_floor: 0.7, sort_order: 3, is_active: true },
-  { level_key: "sovereign", display_name: "Sovereign", global_floor: 0.9, pillar_floor: 0.8, sort_order: 4, is_active: true },
-];
-
-let CERT_LEVELS_CACHE = null;
-async function sbLoadCertLevels(){
-  if (!ONLINE_ENABLED || !AUTH.session) return DEFAULT_CERT_LEVELS;
-  try{
-    const { data, error } = await sb
-      .from("v8_certification_levels")
-      .select("level_key,display_name,global_floor,pillar_floor,sort_order,is_active")
-      .eq("is_active", true)
-      .order("sort_order", { ascending: true });
-    if (error) throw error;
-    if (data && data.length) return data;
-  }catch(e){
-    // fallback
-  }
-  return DEFAULT_CERT_LEVELS;
 }
-async function loadCertLevels(){
-  if (CERT_LEVELS_CACHE) return CERT_LEVELS_CACHE;
-  CERT_LEVELS_CACHE = await sbLoadCertLevels();
-  return CERT_LEVELS_CACHE;
-}
-function computeCertificationResult(levels, overallPct, minPillarPct){
-  const overall = (overallPct ?? 0) / 100.0;
-  const minPillar = (minPillarPct ?? 0) / 100.0;
-  const sorted = (levels || []).slice().sort((a,b)=> (a.sort_order??0) - (b.sort_order??0));
-  let achieved = null;
-  for (const lv of sorted){
-    if (!lv) continue;
-    const gf = Number(lv.global_floor);
-    const pf = Number(lv.pillar_floor);
-    if (Number.isFinite(gf) && Number.isFinite(pf) && overall >= gf && minPillar >= pf){
-      achieved = lv;
-    }
-  }
-  return { achieved, overall, minPillar };
-}
-
-
 
 function tagClass(level){
   if (level === "OK") return "pill tag-ok";
@@ -1765,6 +1839,7 @@ async function viewUpdatePassword(){
       const { error } = await sb.auth.updateUser({ password: p1 });
       if (error) throw error;
       showToast(t('passwordUpdated'));
+      try{ sessionStorage.removeItem(FORCE_PWD_KEY); }catch{}
       // Safety: sign out, then ask user to sign in again
       await signOut();
       go('#/login');
@@ -1858,42 +1933,7 @@ async function viewStart(){
     go(`#/audit/${data.auditId}`);
   }}, t("importAuditProject"));
 
-
-  let adminInvite = null;
-  if (ONLINE_ENABLED && AUTH.isAdmin){
-    const emailIn = h("input",{type:"email", placeholder: t("inviteEmailPh"), style:"flex:2; min-width:240px"});
-    const roleSel = h("select",{style:"flex:1; min-width:160px"},
-      h("option",{value:"auditor"}, t("roleAuditor")),
-      h("option",{value:"admin"}, t("roleAdmin"))
-    );
-    const inviteBtn = h("button",{class:"primary", onclick: async ()=>{
-      const email = String(emailIn.value||"").trim();
-      const role = String(roleSel.value||"auditor");
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ showToast(t("invalidEmail")); return; }
-      const prev = inviteBtn.textContent;
-      inviteBtn.disabled = true;
-      inviteBtn.textContent = t("sendingInvite");
-      try{
-        await inviteUserByEmail(email, role);
-        showToast(t("inviteSent"));
-        emailIn.value = "";
-      }catch(e){
-        showToast(t("inviteFailed") + " — " + (e?.message||e));
-      }finally{
-        inviteBtn.disabled = false;
-        inviteBtn.textContent = prev;
-      }
-    }}, t("sendInvite"));
-
-    adminInvite = h("div",{style:"margin-top:12px"},
-      h("div",{class:"hr"}),
-      h("div",{class:"h3"}, t("adminPanel")),
-      h("div",{class:"small muted"}, t("adminPanelHelp")),
-      h("div",{class:"h3", style:"margin-top:10px"}, t("inviteUserTitle")),
-      h("div",{class:"row", style:"gap:8px; flex-wrap:wrap; margin-top:6px"}, emailIn, roleSel, inviteBtn)
-    );
-  }
-
+  // Admin invitation moved to Users page (#/users)
   const auditList = h("div",{class:"card"},
     h("div",{class:"row-between"},
       h("div",{class:"h3"}, t("auditsExisting")),
@@ -1919,8 +1959,7 @@ async function viewStart(){
           )
         );
       })
-    ) : h("div",{class:"small muted", style:"margin-top:8px"}, t("noAuditYet")),
-    adminInvite
+    ) : h("div",{class:"small muted", style:"margin-top:8px"}, t("noAuditYet"))
   );
 
   const root = h("div",{},
@@ -1980,6 +2019,43 @@ async function viewAdminUsers() {
   if (!AUTH.isAdmin) return viewStart();
 
   let state = { loading: true, error: "", users: [] };
+  // --- Invite form (moved here from Home) ---
+  const inviteEmailInUsersPage = h('input',{type:'email', placeholder: lt('inviteEmailPh'), style:'min-width:260px; flex:2'});
+  const inviteRoleInUsersPage = h('select',{style:'min-width:160px; flex:1'},
+    h('option',{value:'auditor'}, lt('roleAuditor')),
+    h('option',{value:'admin'}, lt('roleAdmin'))
+  );
+  const inviteMsgInUsersPage = h('div',{class:'small muted'});
+  async function doInviteFromUsersPage(){
+    inviteMsgInUsersPage.textContent = '';
+    let btnText = '';
+    const email = String(inviteEmailInUsersPage.value||'').trim().toLowerCase();
+    const role = String(inviteRoleInUsersPage.value||'auditor');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      inviteMsgInUsersPage.textContent = lt('invalidEmail');
+      return;
+    }
+    try{
+      btnText = inviteBtnInUsersPage.textContent;
+      inviteBtnInUsersPage.disabled = true;
+      inviteBtnInUsersPage.textContent = lt('sendingInvite');
+      const out = await inviteUserByEmail(email, role);
+      showToast(lt('inviteSent'));
+      inviteEmailInUsersPage.value = '';
+      // If backend returns an action_link, show it (fallback if SMTP not configured)
+      if (out && (out.action_link || out.actionLink)){
+        inviteMsgInUsersPage.textContent = 'Lien: ' + (out.action_link || out.actionLink);
+      }
+      await load();
+    }catch(e){
+      inviteMsgInUsersPage.textContent = (e && e.message) ? e.message : String(e);
+    }finally{
+      inviteBtnInUsersPage.disabled = false;
+      inviteBtnInUsersPage.textContent = btnText;
+    }
+  }
+  const inviteBtnInUsersPage = h('button',{class:'btn', onclick: doInviteFromUsersPage}, lt('sendInvite'));
+
 
   async function load() {
     state.loading = true;
@@ -2032,6 +2108,13 @@ async function viewAdminUsers() {
           )
         ),
         state.error ? h("div", { class: "card", style: "border:1px solid #a33" }, h("b", {}, "Error: "), state.error) : null,
+        h("div", { class: "card" },
+          h("div", { class: "h3" }, lt("inviteUserTitle")),
+          h("div", { class: "small muted", style: "margin-top:6px" }, lt("adminPanelHelp")),
+          h("div", { class: "row", style: "gap:8px; flex-wrap:wrap; margin-top:10px" }, inviteEmailInUsersPage, inviteRoleInUsersPage, inviteBtnInUsersPage),
+          inviteMsgInUsersPage
+        ),
+
         state.loading
           ? h("div", { class: "card" }, "Loading…")
           : h(
@@ -2105,50 +2188,7 @@ async function viewAdminBaseUpdate() {
 
   let file = null;
   let parsed = null;
-let certFile = null;
-let parsedCert = null;
-let certState = { parsing: false, uploading: false, error: "" };
-
-async function onParseCert(){
-  if (!certFile) return alert("Choisis un fichier Excel.");
-  certState.parsing = true;
-  certState.error = "";
-  paint();
-  try{
-    parsedCert = await parseCertLevelsExcel(certFile);
-    if (!parsedCert.length) throw new Error("Aucun niveau trouvé (sheet 'Executive_Note' ?)");
-  }catch(e){
-    certState.error = e.message || String(e);
-    parsedCert = null;
-  }finally{
-    certState.parsing = false;
-    paint();
-  }
-}
-
-async function onUploadCert(){
-  if (!parsedCert || !parsedCert.length) return alert("Analyse le fichier avant.");
-  certState.uploading = true;
-  certState.error = "";
-  paint();
-  try{
-    await callNetlifyFn("update-cert-levels", { levels: parsedCert });
-    CERT_LEVELS_CACHE = null;
-    await loadCertLevels();
-    alert("OK: niveaux de certification mis à jour.");
-  }catch(e){
-    certState.error = e.message || String(e);
-  }finally{
-    certState.uploading = false;
-    paint();
-  }
-}
-
-
   let state = { parsing: false, uploading: false, error: "", version: "Audit M3 Standard 2026.1" };
-
-  let currentCertLevels = await loadCertLevels();
-
 
   async function onParse() {
     if (!file) return alert("Choisis un fichier Excel.");
@@ -2208,7 +2248,7 @@ async function onUploadCert(){
           )
         ),
         state.error ? h("div", { class: "card", style: "border:1px solid #a33" }, h("b", {}, "Error: "), state.error) : null,
-        h(
+                h(
           "div",
           { class: "card" },
           h("div", { class: "row", style: "gap:10px; flex-wrap:wrap; align-items:flex-end" },
@@ -2229,29 +2269,74 @@ async function onUploadCert(){
             ? h("div", { class: "muted" }, `${lt("criteriaCount")}: ${parsed.length}`)
             : h("div", { class: "muted" }, `DB version courante: ${CRITERIA_VERSION || "local"}`)
         ),
-        h(
-          "div",
-          { class: "card" },
-          h("div", { class: "h2" }, lt("certificationResult")),
-          h("div", { class: "small muted", style: "margin-top:6px" },
-            "Import depuis l’onglet Executive_Note (table Certification level)."
-          ),
-          certState.error ? h("div", { class: "small", style: "margin-top:8px; color:#a33" }, certState.error) : null,
-          h("div", { class: "row", style: "gap:10px; flex-wrap:wrap; align-items:flex-end; margin-top:10px" },
-            h("div", {},
-              h("div", { class: "muted", style: "margin-bottom:6px" }, lt("chooseExcel")),
-              h("input", { type: "file", accept: ".xlsx,.xls", onchange: (e) => { certFile = e.target.files?.[0] || null; parsedCert = null; certState.error = ""; paint(); } })
+// --- Certification levels import ---
+        (function(){
+          let certFile = null;
+          let certParsed = null;
+          const count = h("div",{class:"muted"});
+          const err = h("div",{class:"small", style:"color:#a33; margin-top:8px"});
+          const btnParse = h("button",{class:"btn", disabled:true}, lt("parseCertLevels"));
+          const btnUpload = h("button",{class:"btn", disabled:true}, lt("uploadCertLevels"));
+        
+          const fileInput = h("input",{type:"file", accept:".xlsx,.xls", onchange: (e)=>{
+            certFile = e.target.files?.[0] || null;
+            certParsed = null;
+            err.textContent = "";
+            count.textContent = "";
+            btnParse.disabled = !certFile;
+            btnUpload.disabled = true;
+          }});
+        
+          btnParse.onclick = async ()=>{
+            if (!certFile) return;
+            err.textContent = "";
+            btnParse.disabled = true;
+            btnUpload.disabled = true;
+            try{
+              certParsed = await parseCertLevelsExcel(certFile);
+              if (!certParsed.length) throw new Error("Aucun niveau détecté (Executive_Note).");
+              count.textContent = `${lt("certLevelsCount")}: ${certParsed.length}`;
+              btnUpload.disabled = false;
+            }catch(e){
+              err.textContent = e.message || String(e);
+              certParsed = null;
+              count.textContent = "";
+              btnUpload.disabled = true;
+            }finally{
+              btnParse.disabled = !certFile;
+            }
+          };
+        
+          btnUpload.onclick = async ()=>{
+            if (!certParsed || !certParsed.length) return;
+            err.textContent = "";
+            btnUpload.disabled = true;
+            try{
+              await callNetlifyFn("update-cert-levels", { levels: certParsed });
+              CERT_LEVELS_CACHE = null;
+              await loadCertLevels();
+              alert("OK: niveaux mis à jour.");
+            }catch(e){
+              err.textContent = e.message || String(e);
+              btnUpload.disabled = false;
+            }
+          };
+        
+          return h("div",{class:"card"},
+            h("div",{class:"h2"}, lt("certImportTitle")),
+            h("div",{class:"muted"}, lt("certImportHelp")),
+            h("div",{class:"row", style:"gap:10px; flex-wrap:wrap; align-items:flex-end; margin-top:10px"},
+              h("div",{}, h("div",{class:"muted", style:"margin-bottom:6px"}, lt("chooseExcel")), fileInput),
+              btnParse,
+              btnUpload,
+              count
             ),
-            h("button", { class: "btn", onclick: onParseCert, disabled: certState.parsing || !certFile }, certState.parsing ? lt("parsing") : lt("parseExcel")),
-            h("button", { class: "btn", onclick: onUploadCert, disabled: certState.uploading || !parsedCert }, certState.uploading ? lt("uploading") : lt("uploadToDb"))
-          ),
-          h("div", { class: "spacer" }),
-          parsedCert
-            ? h("div", { class: "muted" }, `${lt("criteriaCount")}: ${parsedCert.length}`)
-            : h("div", { class: "muted" }, `${lt("certificationLevel")}: ${(currentCertLevels && currentCertLevels.length) ? currentCertLevels.map(x=> `${x.display_name} (${x.global_floor}/${x.pillar_floor})`).join(" • ") : "—"}`)
-        )
+            err
+          );
+        })()
       )
     );
+
   }
 
   paint();
@@ -2698,6 +2783,60 @@ async function viewCriterion(auditId, criterionId){
   const evidenceRef = h("input",{placeholder: t("evidencePh")});
   const docId = h("input",{placeholder: t("docIdPh")});
 
+
+// --- Collaboration lock state (online) ---
+let lockHeld = false;
+let lockInfo = null;
+let lockKeepAlive = null;
+
+function setCriterionReadOnly(isRO, reasonText){
+  const els = [naChk, naReason, comments, gap, action, evidenceRef, docId];
+  els.forEach(el => { try{ el.disabled = !!isRO; }catch(e){} });
+  chipBtns.forEach(b => { try{ b.disabled = !!isRO || naChk.checked; }catch(e){} });
+  try{ photoInput && (photoInput.disabled = !!isRO); }catch(e){}
+  try{ saveBtn && (saveBtn.disabled = !!isRO); }catch(e){}
+  if (reasonText) showToast(reasonText);
+}
+
+async function ensureCriterionLock(){
+  if (!ONLINE_ENABLED) return { ok:true, you:true };
+  await refreshAdminFlag();
+  if (AUTH.isAdmin) { lockHeld = true; return { ok:true, you:true, admin:true }; }
+  try{
+    const info = await sbAcquireLock(auditId, criterionId, 120);
+    lockInfo = info || null;
+    lockHeld = !!(info && info.ok && info.you);
+    return info;
+  }catch(e){
+    lockInfo = null;
+    lockHeld = false;
+    return null;
+  }
+}
+
+async function startLockKeepAlive(){
+  if (!ONLINE_ENABLED) return;
+  await refreshAdminFlag();
+  if (AUTH.isAdmin) return;
+  if (!lockHeld) return;
+
+  lockKeepAlive = setInterval(async ()=>{
+    try{ await sbAcquireLock(auditId, criterionId, 120); }catch(e){}
+  }, 60000);
+
+  const onHash = async ()=>{
+    const h = location.hash || '';
+    if (!h.startsWith(`#/criterion/${auditId}/`)){
+      window.removeEventListener('hashchange', onHash);
+      if (lockKeepAlive) clearInterval(lockKeepAlive);
+      lockKeepAlive = null;
+      await sbReleaseLock(auditId, criterionId);
+    }
+  };
+  window.addEventListener('hashchange', onHash);
+}
+
+
   const levelPill = h("span",{class:"pill"}, t("notSet"));
 
   // Score chips (better on Android)
@@ -2785,7 +2924,19 @@ async function viewCriterion(auditId, criterionId){
       weight: c.weight
     };
     next.updatedAtISO = new Date().toISOString();
-    await dbPutAudit(next);
+
+if (ONLINE_ENABLED){
+  // Online collaboration: save only this criterion via RPC (RLS-safe)
+  const li = await ensureCriterionLock();
+  if (!AUTH.isAdmin && !(li && li.ok && li.you)){
+    const by = li?.lockedByEmail ? ` (${li.lockedByEmail})` : "";
+    return alert(`Critère verrouillé par un autre auditeur${by}.`);
+  }
+  await startLockKeepAlive();
+  await sbSetResponse(auditId, criterionId, next.responses[criterionId]);
+}else{
+  await dbPutAudit(next);
+}
     showToast(t("toastSaved"));
     // Auto-advance within the same filtered order
     if (nextId) return go(`#/criterion/${auditId}/${encodeURIComponent(nextId)}`);
@@ -2832,9 +2983,17 @@ async function viewCriterion(auditId, criterionId){
   photoInput.addEventListener("change", async ()=>{
     const f = photoInput.files && photoInput.files[0];
     if (!f) return;
-    const now = new Date();
-    const photoId = computeNextPhotoId();
-    row.photoSeq = (row.photoSeq || 1) + 1;
+
+const now = new Date();
+let photoId = null;
+
+if (ONLINE_ENABLED){
+  // Atomic sequence in DB to avoid collisions between collaborators
+  try{ photoId = await sbNextPhotoId(auditId); }catch(e){ photoId = computeNextPhotoId(); }
+}else{
+  photoId = computeNextPhotoId();
+  row.photoSeq = (row.photoSeq || 1) + 1;
+}
 
     const blob = f.slice(0, f.size, f.type || "image/jpeg");
     const lines = [
@@ -2846,7 +3005,7 @@ async function viewCriterion(auditId, criterionId){
 
     let photoUrl = null;
     if (ONLINE_ENABLED){
-      try{ photoUrl = await sbUploadPhoto(auditId, c.id, photoId, dataUrl, row.__ownerUserId); }catch(e){ photoUrl = null; }
+      try{ photoUrl = await sbUploadPhoto(auditId, c.id, photoId, dataUrl, null); }catch(e){ photoUrl = null; }
     }
 
     const next = {...row};
@@ -2862,7 +3021,18 @@ async function viewCriterion(auditId, criterionId){
     });
     next.responses[criterionId] = {...cur, photos};
     next.updatedAtISO = new Date().toISOString();
-    await dbPutAudit(next);
+
+if (ONLINE_ENABLED){
+  const li = await ensureCriterionLock();
+  if (!AUTH.isAdmin && !(li && li.ok && li.you)){
+    const by = li?.lockedByEmail ? ` (${li.lockedByEmail})` : "";
+    return alert(`Critère verrouillé par un autre auditeur${by}.`);
+  }
+  await startLockKeepAlive();
+  await sbSetResponse(auditId, criterionId, next.responses[criterionId]);
+}else{
+  await dbPutAudit(next);
+}
 
     // refresh local snapshot
     responses[criterionId] = next.responses[criterionId];
@@ -2984,6 +3154,19 @@ async function viewCriterion(auditId, criterionId){
   const backBtn = h("button",{onclick: ()=> go(`#/audit/${auditId}`)}, t("back"));
   const saveBtn = h("button",{class:"primary", onclick: onSave}, t("saveNext"));
 
+
+// Acquire criterion lock (online) so that only one auditor edits at a time.
+if (ONLINE_ENABLED){
+  const li = await ensureCriterionLock();
+  if (!AUTH.isAdmin && !(li && li.ok && li.you)){
+    const by = li?.lockedByEmail ? ` (${li.lockedByEmail})` : "";
+    setCriterionReadOnly(true, `Verrouillé${by}`);
+  }else{
+    await startLockKeepAlive();
+  }
+}
+
+
   const prevBtn = h("button",{onclick: ()=> prevId ? go(`#/criterion/${auditId}/${encodeURIComponent(prevId)}`) : null, disabled: !prevId}, t("prev"));
   const nextBtn = h("button",{onclick: ()=> nextId ? go(`#/criterion/${auditId}/${encodeURIComponent(nextId)}`) : null, disabled: !nextId}, t("next"));
 
@@ -3093,14 +3276,12 @@ async function viewReport(auditId){
     })
     .sort((a,b)=> b.pct - a.pct);
 
-// Certification (overall + min pillar)
-const minPillarPct = byPillar.length ? Math.min(...byPillar.map(x=> x.pct)) : overall.pct;
-const certLevels = await loadCertLevels();
-const certRes = computeCertificationResult(certLevels, overall.pct, minPillarPct);
-const certName = certRes.achieved ? certRes.achieved.display_name : t("certificationNotAchieved");
-const certFloors = certRes.achieved ? `${certRes.achieved.global_floor} / ${certRes.achieved.pillar_floor}` : "—";
-
   // NC register
+  const certLevels = await loadCertLevels();
+  const certRes = computeCertification(overall.pct, byPillar, certLevels);
+  const certLabel = certRes.best ? certRes.best.display_name : t("certNotQualified");
+  const pillarMinPct = certRes.minPillar * 100;
+
   const ncItems = [];
   for (const c of criteria){
     const r = responses[c.id];
@@ -3112,7 +3293,7 @@ const certFloors = certRes.achieved ? `${certRes.achieved.global_floor} / ${cert
   }
 
   const exportHTMLBtn = h("button",{onclick: ()=>{
-    const html = buildReportHTML(row, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities, certName, minPillarPct, certFloors);
+    const html = buildReportHTML(row, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities);
     const fn = `M3_Report_${(row.meta.siteName||"site").replaceAll(" ","_")}.html`;
     downloadText(fn, html, "text/html");
   }}, t("exportHtml"));
@@ -3152,73 +3333,82 @@ const exportExcelBtn = h("button",{onclick: ()=>{
   renderBars(pillarWrap, byPillar);
   renderBars(facilityWrap, byFacility);
 
-const ncWrap = h("div",{class:"list"});
-const ncFacilityValues = Array.from(new Set(ncItems.map(it=> String(it.c.facility||"—")))).sort();
-const ncPillarValues = Array.from(new Set(ncItems.map(it=> String(it.c.pillar||"—")))).sort();
-const ncLevelValues = ["Major","Minor","Observation"];
+  // NC register with filters
+  const ncState = { facility:"", pillar:"", lvl:"" };
+  const ncFacilities = Array.from(new Set(ncItems.map(it=> it.c.facility || ""))).filter(Boolean).sort();
+  const ncPillars = Array.from(new Set(ncItems.map(it=> it.c.pillar || ""))).filter(Boolean).sort();
+  const ncLvls = Array.from(new Set(ncItems.map(it=> it.lvl || ""))).filter(Boolean);
 
-const filters = { facility: "", pillar: "", level: "" };
+  const ncList = h("div",{class:"list"});
 
-function renderNC(){
-  ncWrap.innerHTML = "";
-  const filtered = ncItems.filter(it=>{
-    if (filters.facility && String(it.c.facility||"—") !== filters.facility) return false;
-    if (filters.pillar && String(it.c.pillar||"—") !== filters.pillar) return false;
-    if (filters.level && it.lvl !== filters.level) return false;
-    return true;
-  });
-
-  if (!filtered.length){
-    ncWrap.appendChild(h("div",{class:"small muted", style:"padding-top:10px"}, t("noNC")));
-    return;
-  }
-  for (const it of filtered){
-    const photos = (it.r.photos||[]).map(p=> p.photoId).join(", ") || "—";
-    ncWrap.appendChild(
-      h("div",{class:"item"},
-        h("div",{class:"row-between"},
-          h("div",{class:"h3"}, `${it.c.id} — ${it.c.title}`),
-          h("span",{class: tagClass(it.lvl)}, it.lvl)
-        ),
-        h("div",{class:"small muted"}, `${it.c.facility} • ${it.c.pillar} • ${it.c.parentGroup}`),
-        h("div",{class:"small", style:"margin-top:8px; white-space:pre-wrap"}, it.r.gapObserved || ""),
-        h("div",{class:"small", style:"margin-top:8px; white-space:pre-wrap"}, it.r.action ? ((LANG==="en"?"Action: ":"Action : ")+it.r.action) : ""),
-        h("div",{class:"small muted", style:"margin-top:6px"}, `${LANG==="en"?"Photos":"Photos"}: ${photos}`)
-      )
+  function buildSelect(label, options, onChange){
+    const sel = h("select",{onchange:(e)=>onChange(e.target.value)},
+      h("option",{value:""}, lt("all")),
+      ...options.map(v=> h("option",{value:v}, v))
     );
+    return h("div",{}, h("div",{class:"muted", style:"margin-bottom:6px"}, label), sel);
   }
-}
 
-const ncFiltersRow = h("div",{class:"row", style:"gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:10px"},
-  h("div",{},
-    h("div",{class:"muted", style:"margin-bottom:6px"}, t("filterNCFacility")),
-    h("select",{onchange:(e)=>{ filters.facility = e.target.value; renderNC(); }},
-      h("option",{value:""}, t("allFilters")),
-      ...ncFacilityValues.map(v=> h("option",{value:v}, v))
-    )
-  ),
-  h("div",{},
-    h("div",{class:"muted", style:"margin-bottom:6px"}, t("filterNCPillar")),
-    h("select",{onchange:(e)=>{ filters.pillar = e.target.value; renderNC(); }},
-      h("option",{value:""}, t("allFilters")),
-      ...ncPillarValues.map(v=> h("option",{value:v}, v))
-    )
-  ),
-  h("div",{},
-    h("div",{class:"muted", style:"margin-bottom:6px"}, t("filterNCLevel")),
-    h("select",{onchange:(e)=>{ filters.level = e.target.value; renderNC(); }},
-      h("option",{value:""}, t("allFilters")),
-      ...ncLevelValues.map(v=> h("option",{value:v}, v))
-    )
-  )
-);
+  function renderNC(){
+    ncList.innerHTML = "";
+    const filtered = ncItems.filter(it =>
+      (!ncState.facility || (it.c.facility||"")===ncState.facility) &&
+      (!ncState.pillar || (it.c.pillar||"")===ncState.pillar) &&
+      (!ncState.lvl || (it.lvl||"")===ncState.lvl)
+    );
+    if (!filtered.length){
+      ncList.appendChild(h("div",{class:"small muted", style:"padding-top:10px"}, t("noNC")));
+      return;
+    }
+    for (const it of filtered){
+      const photos = (it.r.photos||[]).map(p=> p.photoId).join(", ") || "—";
+      ncList.appendChild(
+        h("div",{class:"item"},
+          h("div",{class:"row-between"},
+            h("div",{class:"h3"}, `${it.c.id} — ${it.c.title}`),
+            h("span",{class: tagClass(it.lvl)}, it.lvl)
+          ),
+          h("div",{class:"small muted"}, `${it.c.facility} • ${it.c.pillar} • ${it.c.parentGroup}`),
+          h("div",{class:"small", style:"margin-top:8px; white-space:pre-wrap"}, it.r.gapObserved || ""),
+          h("div",{class:"small", style:"margin-top:8px; white-space:pre-wrap"}, it.r.action ? ((LANG==="en" ? "Action: " : "Action : ") + it.r.action) : ""),
+          h("div",{class:"small muted", style:"margin-top:6px"}, `${LANG==="en" ? "Photos" : "Photos"}: ${photos}`)
+        )
+      );
+    }
+  }
 
-renderNC();
+  const ncFilters = h("div",{class:"row", style:"gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:10px"},
+    buildSelect(lt("ncFilterFacility"), ncFacilities, (v)=>{ ncState.facility=v; renderNC(); }),
+    buildSelect(lt("ncFilterPillar"), ncPillars, (v)=>{ ncState.pillar=v; renderNC(); }),
+    buildSelect(lt("ncFilterLevel"), ncLvls, (v)=>{ ncState.lvl=v; renderNC(); })
+  );
 
-const root = h("div",{},
+  const ncWrap = h("div",{}, ncFilters, ncList);
+  renderNC();
+  if (!ncItems.length){
+    ncWrap.appendChild(h("div",{class:"small muted", style:"padding-top:10px"}, t("noNC")));
+  } else {
+    for (const it of ncItems){
+      const photos = (it.r.photos||[]).map(p=> p.photoId).join(", ") || "—";
+      ncWrap.appendChild(
+        h("div",{class:"item"},
+          h("div",{class:"row-between"},
+            h("div",{class:"h3"}, `${it.c.id} — ${it.c.title}`),
+            h("span",{class: tagClass(it.lvl)}, it.lvl)
+          ),
+          h("div",{class:"small muted"}, `${it.c.facility} • ${it.c.pillar} • ${it.c.parentGroup}`),
+          h("div",{class:"small", style:"margin-top:8px; white-space:pre-wrap"}, it.r.gapObserved || ""),
+          h("div",{class:"small", style:"margin-top:8px; white-space:pre-wrap"}, it.r.action ? ((LANG==="en"?"Action: ":"Action : ")+it.r.action) : ""),
+          h("div",{class:"small muted", style:"margin-top:6px"}, `${LANG==="en"?"Photos":"Photos"}: ${photos}`)
+        )
+      );
+    }
+  }
+
+  const root = h("div",{},
     topBar({
       title: `${t("reportTitle")} — ${row.meta.siteName}`,
-      subtitle: `${t("auditorLabel")}: ${row.meta.auditorName} • ${t("facilities")}: ${(auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(", ") : t("all")} • ${t("overallWeightedScore")}: ${overall.pct.toFixed(2)}% • ${t("certificationLevel")}: ${certName}`,
+      subtitle: `${t("auditorLabel")}: ${row.meta.auditorName} • ${t("facilities")}: ${(auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(", ") : t("all")} • ${t("overallWeightedScore")}: ${overall.pct.toFixed(2)}%`,
       right: h("div",{class:"row"}, backBtn, exportJsonBtn, exportExcelBtn, exportHTMLBtn, shareBtn, printBtn)
     }),
     h("div",{class:"wrap grid", style:"gap:12px"},
@@ -3227,10 +3417,11 @@ const root = h("div",{},
         h("div",{class:"row", style:"margin-top:10px"},
           h("span",{class:"pill"}, `${t("criteriaLabel")}: ${criteria.length}`),
           h("span",{class:"pill"}, `${t("ncLabel")}: ${ncItems.length}`),
+          h("span",{class:"pill"}, `${t("certLevelLabel")}: ${certLabel}`),
+          h("span",{class:"pill"}, `${t("certPillarMinLabel")}: ${pillarMinPct.toFixed(2)}%`),
+
           h("span",{class:"pill"}, `ΣW: ${Math.round(overall.sumW)}`),
-          h("span",{class:"pill"}, `${t("scoreLabel")}: ${overall.pct.toFixed(2)}%`),
-          h("span",{class:"pill"}, `${t("certificationLevel")}: ${certName}`),
-          h("span",{class:"pill"}, `Min pillar: ${minPillarPct.toFixed(2)}% • ${t("certificationFloors")}: ${certFloors}`)
+          h("span",{class:"pill"}, `${t("scoreLabel")}: ${overall.pct.toFixed(2)}%`)
         ),
         h("div",{class:"small muted", style:"margin-top:10px"}, t("scoreDefinition"))
       ),
@@ -3244,7 +3435,6 @@ const root = h("div",{},
       ),
       h("div",{class:"card"},
         h("div",{class:"h2"}, t("reportNC")),
-        ncFiltersRow,
         h("div",{style:"margin-top:10px"}, ncWrap)
       ),
       h("div",{class:"small muted"}, t("pdfTip"))
@@ -3297,13 +3487,6 @@ async function viewPublicReport(token){
     })
     .sort((a,b)=> b.pct - a.pct);
 
-// Certification (overall + min pillar)
-const minPillarPct = byPillar.length ? Math.min(...byPillar.map(x=> x.pct)) : overall.pct;
-const certLevels = await loadCertLevels();
-const certRes = computeCertificationResult(certLevels, overall.pct, minPillarPct);
-const certName = certRes.achieved ? certRes.achieved.display_name : t("certificationNotAchieved");
-const certFloors = certRes.achieved ? `${certRes.achieved.global_floor} / ${certRes.achieved.pillar_floor}` : "—";
-
   const ncItems = [];
   for (const c of criteria){
     const r = responses[c.id];
@@ -3319,70 +3502,87 @@ const certFloors = certRes.achieved ? `${certRes.achieved.global_floor} / ${cert
   renderBars(pillarWrap, byPillar);
   renderBars(facilityWrap, byFacility);
 
-const ncWrap = h("div",{class:"list"});
-const ncFacilityValues = Array.from(new Set(ncItems.map(it=> String(it.c.facility||"—")))).sort();
-const ncPillarValues = Array.from(new Set(ncItems.map(it=> String(it.c.pillar||"—")))).sort();
-const ncLevelValues = ["Major","Minor","Observation"];
+  // NC register with filters
+  const ncState = { facility:"", pillar:"", lvl:"" };
+  const ncFacilities = Array.from(new Set(ncItems.map(it=> it.c.facility || ""))).filter(Boolean).sort();
+  const ncPillars = Array.from(new Set(ncItems.map(it=> it.c.pillar || ""))).filter(Boolean).sort();
+  const ncLvls = Array.from(new Set(ncItems.map(it=> it.lvl || ""))).filter(Boolean);
 
-const filters = { facility: "", pillar: "", level: "" };
+  const ncList = h('div',{class:'list'});
 
-function renderNC(){
-  ncWrap.innerHTML = "";
-  const filtered = ncItems.filter(it=>{
-    if (filters.facility && String(it.c.facility||"—") !== filters.facility) return false;
-    if (filters.pillar && String(it.c.pillar||"—") !== filters.pillar) return false;
-    if (filters.level && it.lvl !== filters.level) return false;
-    return true;
-  });
-
-  if (!filtered.length){
-    ncWrap.appendChild(h("div",{class:"small muted", style:"padding-top:10px"}, t("noNC")));
-    return;
-  }
-  for (const it of filtered){
-    const photos = (it.r.photos||[]).map(p=> p.photoId).join(", ") || "—";
-    ncWrap.appendChild(
-      h("div",{class:"item"},
-        h("div",{class:"row-between"},
-          h("div",{class:"h3"}, `${it.c.id} — ${it.c.title}`),
-          h("span",{class: tagClass(it.lvl)}, it.lvl)
-        ),
-        h("div",{class:"small muted"}, `${it.c.facility} • ${it.c.pillar} • ${it.c.parentGroup}`),
-        h("div",{class:"small", style:"margin-top:8px; white-space:pre-wrap"}, it.r.gapObserved || ""),
-        h("div",{class:"small", style:"margin-top:8px; white-space:pre-wrap"}, it.r.action ? ((LANG==="en"?"Action: ":"Action : ")+it.r.action) : ""),
-        h("div",{class:"small muted", style:"margin-top:6px"}, `${LANG==="en"?"Photos":"Photos"}: ${photos}`)
-      )
+  function buildSelect(label, options, onChange){
+    const sel = h('select',{onchange:(e)=>onChange(e.target.value)},
+      h('option',{value:''}, lt('all')),
+      ...options.map(v=> h('option',{value:v}, v))
     );
+    return h('div',{}, h('div',{class:'muted', style:'margin-bottom:6px'}, label), sel);
   }
-}
 
-const ncFiltersRow = h("div",{class:"row", style:"gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:10px"},
-  h("div",{},
-    h("div",{class:"muted", style:"margin-bottom:6px"}, t("filterNCFacility")),
-    h("select",{onchange:(e)=>{ filters.facility = e.target.value; renderNC(); }},
-      h("option",{value:""}, t("allFilters")),
-      ...ncFacilityValues.map(v=> h("option",{value:v}, v))
-    )
-  ),
-  h("div",{},
-    h("div",{class:"muted", style:"margin-bottom:6px"}, t("filterNCPillar")),
-    h("select",{onchange:(e)=>{ filters.pillar = e.target.value; renderNC(); }},
-      h("option",{value:""}, t("allFilters")),
-      ...ncPillarValues.map(v=> h("option",{value:v}, v))
-    )
-  ),
-  h("div",{},
-    h("div",{class:"muted", style:"margin-bottom:6px"}, t("filterNCLevel")),
-    h("select",{onchange:(e)=>{ filters.level = e.target.value; renderNC(); }},
-      h("option",{value:""}, t("allFilters")),
-      ...ncLevelValues.map(v=> h("option",{value:v}, v))
-    )
-  )
-);
+  function renderNC(){
+    ncList.innerHTML = "";
+    const filtered = ncItems.filter(it =>
+      (!ncState.facility || (it.c.facility||"")===ncState.facility) &&
+      (!ncState.pillar || (it.c.pillar||"")===ncState.pillar) &&
+      (!ncState.lvl || (it.lvl||"")===ncState.lvl)
+    );
+    if (!filtered.length){
+      ncList.appendChild(h('div',{class:'small muted', style:'padding-top:10px'}, t('noNC')));
+      return;
+    }
+    for (const it of filtered){
+      const photos = (it.r.photos||[]).map(p=> p.photoId).join(", ") || "—";
+      ncList.appendChild(
+        h('div',{class:'item'},
+          h('div',{class:'row-between'},
+            h('div',{class:'h3'}, `${it.c.id} — ${it.c.title}`),
+            h('span',{class: tagClass(it.lvl)}, it.lvl)
+          ),
+          h('div',{class:'small muted'}, `${it.c.facility} • ${it.c.pillar} • ${it.c.parentGroup}`),
+          h('div',{class:'small', style:'margin-top:8px; white-space:pre-wrap'}, it.r.gapObserved || ""),
+          h('div',{class:'small', style:'margin-top:8px; white-space:pre-wrap'}, it.r.action ? ((LANG===$'en$'?$'Action: $':$'Action : $')+it.r.action) : ""),
+          h('div',{class:'small muted', style:'margin-top:6px'}, `${LANG===$'en$'?$'Photos$':$'Photos$'}: ${photos}`)
+        )
+      );
+    }
+  }
 
-renderNC();
+  const ncFilters = h('div',{class:'row', style:'gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:10px'},
+    buildSelect(lt('ncFilterFacility'), ncFacilities, (v)=>{ ncState.facility=v; renderNC(); }),
+    buildSelect(lt('ncFilterPillar'), ncPillars, (v)=>{ ncState.pillar=v; renderNC(); }),
+    buildSelect(lt('ncFilterLevel'), ncLvls, (v)=>{ ncState.lvl=v; renderNC(); })
+  );
 
-const root = h('div',{},
+  const ncWrap = h('div',{}, ncFilters, ncList);
+  renderNC();
+  if (!ncItems.length){
+    ncWrap.appendChild(h('div',{class:'small muted', style:'padding-top:10px'}, t('noNC')));
+  } else {
+    for (const it of ncItems){
+      const photos = (it.r.photos||[]).map(p=> p.photoId).join(", ") || "—";
+      ncWrap.appendChild(
+        h('div',{class:'item'},
+          h('div',{class:'row-between'},
+            h('div',{class:'h3'}, `${it.c.id} — ${it.c.title}`),
+            h('span',{class: tagClass(it.lvl)}, it.lvl)
+          ),
+          h('div',{class:'small muted'}, `${it.c.facility} • ${it.c.pillar} • ${it.c.parentGroup}`),
+          h('div',{class:'small', style:'margin-top:8px; white-space:pre-wrap'}, it.r.gapObserved || ""),
+          h('div',{class:'small', style:'margin-top:8px; white-space:pre-wrap'}, it.r.action ? ((LANG==="en"?"Action: ":"Action : ")+it.r.action) : ""),
+          h('div',{class:'small muted', style:'margin-top:6px'}, `${LANG==="en"?"Photos":"Photos"}: ${photos}`)
+        )
+      );
+    }
+  }
+
+  const exportHTMLBtn = h('button',{onclick: ()=>{
+    const html = buildReportHTML(audit, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities);
+    const fn = `M3_Report_${(audit.meta?.siteName||"site").replaceAll(" ","_")}.html`;
+    downloadText(fn, html, 'text/html');
+  }}, t('exportHtml'));
+
+  const printBtn = h('button',{onclick: ()=> window.print()}, t('printPdf'));
+
+  const root = h('div',{},
     topBar({
       title: `${t('reportTitle')} — ${(audit.meta?.siteName||'')}`,
       subtitle: `${t('facilities')}: ${(auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(', ') : t('all')} • ${t('overallWeightedScore')}: ${overall.pct.toFixed(2)}%`,
@@ -3394,6 +3594,9 @@ const root = h('div',{},
         h('div',{class:'row', style:'margin-top:10px'},
           h('span',{class:'pill'}, `${t('criteriaLabel')}: ${criteria.length}`),
           h('span',{class:'pill'}, `${t('ncLabel')}: ${ncItems.length}`),
+        h('span',{class:'pill'}, `${t('certLevelLabel')}: ${certLabel}`),
+        h('span',{class:'pill'}, `${t('certPillarMinLabel')}: ${pillarMinPct.toFixed(2)}%`),
+
           h('span',{class:'pill'}, `ΣW: ${Math.round(overall.sumW)}`),
           h('span',{class:'pill'}, `${t('scoreLabel')}: ${overall.pct.toFixed(2)}%`)
         )
@@ -3412,7 +3615,7 @@ function esc(s){
   return String(s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 }
 
-function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncItems, criteriaCount, auditedFacilities, certName, minPillarPct, certFloors){
+function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncItems, criteriaCount, auditedFacilities){
   const L = (lang === "en") ? "en" : "fr";
   const dict = I18N[L] || I18N.fr;
   const lt = (k)=> (dict && dict[k]) ? dict[k] : (I18N.fr[k] || k);
@@ -3484,8 +3687,6 @@ function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncI
       <span class="pill">${esc(lt("ncLabel"))}: ${ncItems.length}</span>
       <span class="pill">ΣW: ${Math.round(overall.sumW)}</span>
       <span class="pill">${esc(lt("scoreLabel"))}: ${overall.pct.toFixed(2)}%</span>
-      <span class="pill">${esc(lt("certificationLevel"))}: ${esc(certName||"—")}</span>
-      <span class="pill">Min pillar: ${Number(minPillarPct||0).toFixed(2)}% • ${esc(lt("certificationFloors"))}: ${esc(certFloors||"—")}</span>
     </div>
     <div class="muted" style="margin-top:8px">${esc(lt("scoreDefinition"))}</div>
   </div>
@@ -3505,6 +3706,35 @@ async function render(){ await route(); }
 async function route(){
   updateFooter();
   const parts = parseHash();
+  // Normalize Supabase auth callbacks that arrive as token-only hash (e.g. #access_token=...&type=recovery)
+  const rawHash = window.location.hash || '';
+  if (rawHash && rawHash.startsWith('#') && !rawHash.startsWith('#/') && (rawHash.includes('access_token=') || rawHash.includes('refresh_token=') || rawHash.includes('type=') || rawHash.includes('error='))){
+    const params = rawHash.slice(1);
+    const qs = new URLSearchParams(params);
+    const typ = (qs.get('type') || '').toLowerCase();
+    const target = (typ === 'recovery' || typ === 'invite') ? '#/update-password' : '#/';
+    if (typ === 'recovery' || typ === 'invite'){
+      try{ sessionStorage.setItem(FORCE_PWD_KEY, typ); }catch{}
+    }
+    window.location.hash = target + '?' + params;
+    return;
+  }
+
+  // Force password update after recovery/invite until completed
+  const linkType = String(getParamAnywhere('type') || '').toLowerCase();
+  if (linkType === 'recovery' || linkType === 'invite'){
+    try{ sessionStorage.setItem(FORCE_PWD_KEY, linkType); }catch{}
+  }
+  let force = null;
+  try{ force = sessionStorage.getItem(FORCE_PWD_KEY); }catch{}
+  if (force && !['update-password','forgot-password','login'].includes(parts[0])){
+    // Preserve any hash query params (code/access_token/refresh_token/type)
+    const h = window.location.hash || '';
+    const q = h.includes('?') ? h.slice(h.indexOf('?')+1) : '';
+    window.location.hash = '#/update-password' + (q ? ('?' + q) : '');
+    return;
+  }
+
 
   // Public report links (no login)
   if (parts[0] === "public" && parts[1]){
