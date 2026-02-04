@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.6.6";
+const APP_VERSION = "standalone-2.6.7";
 
 
 function escHtml(str) {
@@ -435,7 +435,7 @@ criteriaCount: "Criteria",
     reportSummary: "Summary",
     reportScoresPillar: "Scores by pillar",
     reportScoresFacilities: "Scores by facility",
-    reportNC: "NC register",
+    reportNC: "Non‑conformités",
     certLevelLabel: "Certification",
     certPillarMinLabel: "Min pillars",
     certThresholdsLabel: "Thresholds",
@@ -3483,7 +3483,7 @@ async function viewReport(auditId){
     })
     .sort((a,b)=> b.pct - a.pct);
 
-  // NC register
+  // Non‑conformités
   const certLevels = await loadCertLevels();
   const certRes = computeCertification(overall.pct, byPillar, certLevels);
   const certLabel = certRes.best ? certRes.best.display_name : t("certNotQualified");
@@ -3552,7 +3552,7 @@ const exportExcelBtn = h("button",{onclick: ()=>{
   renderBars(pillarWrap, byPillar);
   renderBars(facilityWrap, byFacility);
 
-  // NC register with filters
+  // Non‑conformités with filters
   const ncState = { facility:"", pillar:"", lvl:"" };
   const ncFacilities = Array.from(new Set(ncItems.map(it=> it.c.facility || ""))).filter(Boolean).sort();
   const ncPillars = Array.from(new Set(ncItems.map(it=> it.c.pillar || ""))).filter(Boolean).sort();
@@ -3843,7 +3843,7 @@ async function viewPublicReport(token){
   renderBars(pillarWrap, byPillar);
   renderBars(facilityWrap, byFacility);
 
-  // NC register with filters
+  // Non‑conformités with filters
   const ncState = { facility:"", pillar:"", lvl:"" };
   const ncFacilities = Array.from(new Set(ncItems.map(it=> it.c.facility || ""))).filter(Boolean).sort();
   const ncPillars = Array.from(new Set(ncItems.map(it=> it.c.pillar || ""))).filter(Boolean).sort();
@@ -4022,7 +4022,19 @@ const created = audit.meta?.createdAtISO ? new Date(audit.meta.createdAtISO).toL
 
   return `<!doctype html>
 <html lang="${esc(L)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(lt("appTitle"))} — ${esc(lt("reportTitle"))}</title><style>${css}</style></head>
+<title>${esc(lt("appTitle"))} — ${esc(lt("reportTitle"))}</title><style>${css}
+/* Prevent content being cut between pages */
+.page{ height:auto; min-height:297mm; overflow: visible; }
+@media print{
+  .page{ height:297mm; overflow:hidden; }
+  table{ page-break-inside:auto; }
+  thead{ display:table-header-group; }
+  tfoot{ display:table-footer-group; }
+  tr, td, th{ page-break-inside: avoid; break-inside: avoid-page; }
+  .card, .editor{ break-inside: avoid; page-break-inside: avoid; }
+}
+
+</style></head>
 <body>
   <h1>${esc(lt("reportTitle"))} — ${esc(audit.meta.siteName)}</h1>
   <div class="muted">${esc(lt("auditorLabel"))}: ${esc(audit.meta.auditorName)} • ${esc(lt("facilities"))}: ${esc((auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(", ") : lt("all"))} • ${esc(L==="en"?"Created":"Créé")}: ${esc(created)} • ${esc(L==="en"?"Updated":"Mis à jour")}: ${esc(updated)}</div>
@@ -4367,7 +4379,7 @@ ${String(auditDate||"")}`)}
       const cont = (idx>0);
       pages.push(`
       <section class="page">
-        ${pageHeader(`Pillar Deep‑Dive — ${label}`, cont ? `NC register continued (${idx+1}/${chunks.length})` : ``)}
+        ${pageHeader(`Pillar Deep‑Dive — ${label}`, cont ? `Non‑conformités — suite (${idx+1}/${chunks.length})` : ``)}
         <div class="page-inner">
           <div class="row" style="align-items:flex-end">
             <div>
@@ -4389,7 +4401,7 @@ ${String(auditDate||"")}`)}
           `}
 
           <div class="card soft">
-            <div class="row"><h2 style="margin:0">NC register (this pillar)</h2><div class="muted" style="font-size:11px;font-weight:750">Most important section</div></div>
+            <div class="row"><h2 style="margin:0">Non‑conformités (ce pilier)</h2><div class="muted" style="font-size:11px;font-weight:750">Most important section</div></div>
             <div style="height:6px"></div>
             <table>
               <tr><th style="width:36%">Criterion</th><th style="width:16%">Level</th><th>Finding & Recommendation</th></tr>
