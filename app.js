@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.5.6";
+const APP_VERSION = "standalone-2.5.8";
 const DB_NAME = "m3_audit_standalone";
 const DB_VERSION = 1;
 const STORE_AUDITS = "audits";
@@ -223,12 +223,6 @@ criteriaCount: "Critères",
     auditNotFoundTitle: "Audit introuvable",
     auditNotFoundBody: "Cet audit n’existe pas (ou a été supprimé).",
     updatedLabel: "Maj",
-    exportHtmlClient: "Exporter rapport client (HTML)",
-    actionPlanTitle: "Plan d'action",
-    addRow: "Ajouter une ligne",
-    saveActionPlan: "Enregistrer",
-    saved: "Enregistr\u00e9",
-    actionPlanHint: "Ce plan d\u2019action est \u00e9ditable. Il sera utilis\u00e9 dans l\u2019export du rapport client.",
   },
   en: {
     appTitle: "M3 Smart Sustainable Standard - Audit Tool",
@@ -453,6 +447,12 @@ criteriaCount: "Criteria",
     auditNotFoundTitle: "Audit not found",
     auditNotFoundBody: "This audit does not exist (or was deleted).",
     updatedLabel: "Updated",
+exportHtmlClient: "Export client report (HTML)",
+actionPlanTitle: "Action plan",
+addRow: "Add row",
+saveActionPlan: "Save",
+saved: "Saved",
+actionPlanHint: "This action plan is editable and will be used in the client report export.",
   }
 };
 
@@ -591,12 +591,6 @@ function showToast(message){
   setTimeout(()=>{
     el.classList.remove("show");
     setTimeout(()=> el.remove(), 250);
-    exportHtmlClient: "Export client report (HTML)",
-    actionPlanTitle: "Action plan",
-    addRow: "Add row",
-    saveActionPlan: "Save",
-    saved: "Saved",
-    actionPlanHint: "This action plan is editable and will be used in the client report export.",
   }, 1200);
 }
 
