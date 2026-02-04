@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.5.4";
+const APP_VERSION = "standalone-2.5.5";
 const DB_NAME = "m3_audit_standalone";
 const DB_VERSION = 1;
 const STORE_AUDITS = "audits";
@@ -627,7 +627,7 @@ function topBar({title, subtitle, right} = {}){
           ? h("button",{class:"btn btn--ghost", onclick: async ()=>{ await signOut(); showToast(t("signedOut")); go("#/login"); }}, t("signOut"))
           : h("a",{class:"btn btn--ghost", href:"#/login"}, t("signIn"))
         );
-        return h("div",{class:"topActions"}, langSel, userPill || h("div",{}), (AUTH && AUTH.isAdmin) ? h("div",{class:"adminLinks"}, h("a",{class:"btn btn--ghost", href:"#/users"}, t("adminUsersNav")), h("a",{class:"btn btn--ghost", href:"#/audits"}, t("adminAuditsNav")), h("a",{class:"btn btn--ghost", href:"#/base"}, t("adminBaseNav"))) : h("div",{}), right || h("div",{}), authBtn || h("div",{}));
+        return h("div",{class:"topActions"}, langSel, userPill || h("div",{}), (AUTH && AUTH.isAdmin) ? h("div",{class:"adminLinks"}, h("a",{class:"btn btn--ghost", href:"#/"}, t("home")), h("a",{class:"btn btn--ghost", href:"#/users"}, t("adminUsersNav")), h("a",{class:"btn btn--ghost", href:"#/audits"}, t("adminAuditsNav")), h("a",{class:"btn btn--ghost", href:"#/base"}, t("adminBaseNav"))) : h("div",{}), right || h("div",{}), authBtn || h("div",{}));
       })()
     )
   );
@@ -3552,7 +3552,7 @@ const exportExcelBtn = h("button",{onclick: ()=>{
     topBar({
       title: `${t("reportTitle")} — ${row.meta.siteName}`,
       subtitle: `${t("auditorLabel")}: ${row.meta.auditorName} • ${t("facilities")}: ${(auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(", ") : t("all")} • ${t("overallWeightedScore")}: ${overall.pct.toFixed(2)}%`,
-      right: h("div",{class:"row"}, homeBtn, backBtn, exportJsonBtn, exportExcelBtn, exportHTMLBtn, shareBtn, printBtn)
+      right: h("div",{class:"row"}, backBtn, exportJsonBtn, exportExcelBtn, exportHTMLBtn, shareBtn, printBtn)
     }),
     h("div",{class:"wrap grid", style:"gap:12px"},
       h("div",{class:"card"},
@@ -3736,7 +3736,7 @@ async function viewPublicReport(token){
     topBar({
       title: `${t('reportTitle')} — ${(audit.meta?.siteName||'')}`,
       subtitle: `${t('facilities')}: ${(auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(', ') : t('all')} • ${t('overallWeightedScore')}: ${overall.pct.toFixed(2)}%`,
-      right: h('div',{class:'row'}, homeBtn, exportHTMLBtn, printBtn)
+      right: h('div',{class:'row'}, exportHTMLBtn, printBtn)
     }),
     h('div',{class:'wrap grid', style:'gap:12px'},
       h('div',{class:'card'},
