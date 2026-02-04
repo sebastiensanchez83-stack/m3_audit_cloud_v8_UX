@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.6.3";
+const APP_VERSION = "standalone-2.6.4";
 
 
 function escHtml(str) {
@@ -4070,7 +4070,7 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
   const overallPct = (overall && typeof overall === "object") ? Number(overall.pct) : Number(overall);
   const minPillarPct = Number(pillarMinPct);
 
-  const normNc = (normNc||[]).map(nc=>{
+  const normNc = (ncItems||[]).map(nc=>{
     // Shape from viewReport: { c, r, lvl }
     if (nc && nc.c){
       const c = nc.c || {};
