@@ -68,6 +68,7 @@ const I18N = {
     adminPanel: "Administration",
     adminUsersNav: "Users",
     adminBaseNav: "Base audit",
+    adminAuditsNav: "Audits",
     adminPanelHelp: "Invitations et gestion des accès.",
     inviteUserTitle: "Inviter un utilisateur",
 usersTitle: "Users",
@@ -273,6 +274,7 @@ criteriaCount: "Critères",
     adminPanel: "Administration",
     adminUsersNav: "Users",
     adminBaseNav: "Audit base",
+    adminAuditsNav: "Audits",
     adminPanelHelp: "Invites and access management.",
     inviteUserTitle: "Invite a user",
 usersTitle: "Users",
@@ -625,7 +627,7 @@ function topBar({title, subtitle, right} = {}){
           ? h("button",{class:"btn btn--ghost", onclick: async ()=>{ await signOut(); showToast(t("signedOut")); go("#/login"); }}, t("signOut"))
           : h("a",{class:"btn btn--ghost", href:"#/login"}, t("signIn"))
         );
-        return h("div",{class:"topActions"}, langSel, userPill || h("div",{}), (AUTH && AUTH.isAdmin) ? h("div",{class:"adminLinks"}, h("a",{class:"btn btn--ghost", href:"#/users"}, t("adminUsersNav")), h("a",{class:"btn btn--ghost", href:"#/base"}, t("adminBaseNav"))) : h("div",{}), right || h("div",{}), authBtn || h("div",{}));
+        return h("div",{class:"topActions"}, langSel, userPill || h("div",{}), (AUTH && AUTH.isAdmin) ? h("div",{class:"adminLinks"}, h("a",{class:"btn btn--ghost", href:"#/users"}, t("adminUsersNav")), h("a",{class:"btn btn--ghost", href:"#/audits"}, t("adminAuditsNav")), h("a",{class:"btn btn--ghost", href:"#/base"}, t("adminBaseNav"))) : h("div",{}), right || h("div",{}), authBtn || h("div",{}));
       })()
     )
   );
@@ -2342,6 +2344,143 @@ async function viewAdminBaseUpdate() {
   paint();
 }
 
+
+async function viewAdminAudits(){
+  if (!ONLINE_ENABLED) return viewStart();
+  if (!AUTH.user) return viewLogin();
+  await refreshAdminFlag();
+  if (!AUTH.isAdmin) return viewStart();
+
+  let state = { loading: true, error: "", audits: [], selected: null, collabs: [], invites: [] };
+
+  async function loadAudits(){
+    state.loading = true; state.error = ""; paint();
+    try{
+      state.audits = await sbListAudits();
+    }catch(e){
+      state.error = e.message || String(e);
+    }finally{
+      state.loading = false;
+      paint();
+    }
+  }
+
+  async function selectAudit(a){
+    state.selected = a;
+    state.collabs = [];
+    state.invites = [];
+    paint();
+    try{
+      const out = await callNetlifyFn("list-audit-collaborators", { audit_id: a.auditId });
+      state.collabs = out.collaborators || [];
+      state.invites = out.invites || [];
+    }catch(e){
+      state.error = e.message || String(e);
+    }
+    paint();
+  }
+
+  async function inviteToAudit(){
+    if (!state.selected) return;
+    const email = prompt((LANG==="en") ? "Invite auditor email:" : "Email de l’auditeur à inviter :");
+    if (!email) return;
+    const role = prompt((LANG==="en") ? "Role: auditor / viewer / lead" : "Rôle : auditor / viewer / lead", "auditor") || "auditor";
+    try{
+      await callNetlifyFn("invite-audit-collaborator", { audit_id: state.selected.auditId, email: email.trim(), role: role.trim() });
+      await selectAudit(state.selected);
+      showToast((LANG==="en") ? "Invite sent" : "Invitation envoyée");
+    }catch(e){
+      alert(e.message || String(e));
+    }
+  }
+
+  async function removeCollab(entry){
+    if (!state.selected) return;
+    if (!confirm((LANG==="en") ? "Remove access?" : "Retirer l’accès ?")) return;
+    try{
+      await callNetlifyFn("remove-audit-collaborator", { audit_id: state.selected.auditId, user_id: entry.user_id });
+      await selectAudit(state.selected);
+    }catch(e){
+      alert(e.message || String(e));
+    }
+  }
+
+  async function removeInvite(inv){
+    if (!state.selected) return;
+    if (!confirm((LANG==="en") ? "Cancel pending invite?" : "Annuler l’invitation en attente ?")) return;
+    try{
+      await callNetlifyFn("remove-audit-collaborator", { audit_id: state.selected.auditId, email: inv.email });
+      await selectAudit(state.selected);
+    }catch(e){
+      alert(e.message || String(e));
+    }
+  }
+
+  function paint(){
+    const left = h("div",{class:"card"},
+      h("div",{class:"row-between"},
+        h("div",{}, h("div",{class:"h3"}, (LANG==="en") ? "Audits" : "Audits"), h("div",{class:"small muted"}, (LANG==="en") ? "Manage collaborators per audit." : "Gérer les collaborateurs par audit.")),
+        h("div",{class:"row", style:"gap:8px"},
+          h("button",{class:"btn", onclick: ()=>go("#/")}, "←"),
+          h("button",{class:"btn", onclick: loadAudits}, (LANG==="en") ? "Refresh" : "Rafraîchir")
+        )
+      ),
+      state.loading ? h("div",{class:"small muted", style:"margin-top:10px"}, "Loading…") :
+      (state.audits && state.audits.length) ? h("div",{class:"list", style:"margin-top:10px"},
+        ...state.audits.map(a=>{
+          const meta = a.meta || {};
+          const isSel = state.selected && state.selected.auditId === a.auditId;
+          const updated = a.updatedAtISO ? new Date(a.updatedAtISO).toLocaleString() : "";
+          return h("div",{class:"item row-between", style: isSel ? "border:2px solid var(--primary)" : "", onclick: ()=>selectAudit(a)},
+            h("div",{},
+              h("div",{class:"h3"}, meta.siteName || "Unnamed site"),
+              h("div",{class:"small muted"}, `${meta.auditorName||"-"} • ${updated}${a.ownerUserId ? " • " + (emailForUserId(a.ownerUserId) || String(a.ownerUserId).slice(0,8)+"…") : ""}`)
+            ),
+            h("div",{class:"small muted"}, a.auditId.slice(0,8)+"…")
+          );
+        })
+      ) : h("div",{class:"small muted", style:"margin-top:10px"}, (LANG==="en") ? "No audits." : "Aucun audit.")
+    );
+
+    const right = !state.selected ? h("div",{class:"card"}, h("div",{class:"small muted"}, (LANG==="en") ? "Select an audit to manage access." : "Sélectionnez un audit pour gérer les accès.")) :
+      h("div",{class:"card"},
+        h("div",{class:"row-between"},
+          h("div",{}, h("div",{class:"h3"}, (LANG==="en") ? "Collaborators" : "Collaborateurs"), h("div",{class:"small muted"}, state.selected.meta?.siteName || "")),
+          h("button",{class:"btn", onclick: inviteToAudit}, (LANG==="en") ? "Invite" : "Inviter")
+        ),
+        h("div",{class:"hr"}),
+        h("div",{class:"h3", style:"margin-top:6px"}, (LANG==="en") ? "Active" : "Actifs"),
+        (state.collabs && state.collabs.length) ? h("div",{class:"list", style:"margin-top:8px"},
+          ...state.collabs.map(c=> h("div",{class:"item row-between"},
+            h("div",{}, h("div",{class:"h3"}, c.user_email || emailForUserId(c.user_id) || (String(c.user_id).slice(0,8)+"…")), h("div",{class:"small muted"}, `${c.role || "auditor"}`)),
+            h("button",{class:"btn btn--ghost", onclick: ()=>removeCollab(c)}, (LANG==="en") ? "Remove" : "Retirer")
+          ))
+        ) : h("div",{class:"small muted", style:"margin-top:8px"}, (LANG==="en") ? "No collaborators." : "Aucun collaborateur."),
+        h("div",{class:"h3", style:"margin-top:14px"}, (LANG==="en") ? "Pending invites" : "Invitations en attente"),
+        (state.invites && state.invites.length) ? h("div",{class:"list", style:"margin-top:8px"},
+          ...state.invites.filter(x=>!x.accepted_at).map(inv=> h("div",{class:"item row-between"},
+            h("div",{}, h("div",{class:"h3"}, inv.email), h("div",{class:"small muted"}, `${inv.role||"auditor"} • ${(inv.created_at?new Date(inv.created_at).toLocaleString():"")}`)),
+            h("button",{class:"btn btn--ghost", onclick: ()=>removeInvite(inv)}, (LANG==="en") ? "Cancel" : "Annuler")
+          ))
+        ) : h("div",{class:"small muted", style:"margin-top:8px"}, (LANG==="en") ? "No pending invites." : "Aucune invitation.")
+      );
+
+    setRoot(
+      h("div",{},
+        topBar({title: (LANG==="en") ? "Admin — Audits" : "Admin — Audits", subtitle: (LANG==="en") ? "Access management" : "Gestion des accès"}),
+        state.error ? h("div",{class:"wrap"}, h("div",{class:"card", style:"border:1px solid #a33"}, h("b",{},"Error: "), state.error)) : null,
+        h("div",{class:"wrap grid", style:"grid-template-columns: 1fr 1fr; gap:14px"},
+          left,
+          right
+        )
+      )
+    );
+  }
+
+  await loadAudits();
+}
+
+
 async function viewAudit(auditId){
   const dbData = await loadCriteriaDB();
   const row = await dbGetAudit(auditId);
@@ -3760,6 +3899,8 @@ if (parts[0] === "users") return viewAdminUsers();
 if (parts[0] === "admin" && parts[1] === "users") return viewAdminUsers();
 if (parts[0] === "base") return viewAdminBaseUpdate();
 if (parts[0] === "admin" && parts[1] === "base") return viewAdminBaseUpdate();
+if (parts[0] === "audits") return viewAdminAudits();
+if (parts[0] === "admin" && parts[1] === "audits") return viewAdminAudits();
 return viewStart();
 }
 
