@@ -2,7 +2,18 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.6.0";
+const APP_VERSION = "standalone-2.6.1";
+
+
+function escHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 const DB_NAME = "m3_audit_standalone";
 const DB_VERSION = 1;
 const STORE_AUDITS = "audits";
