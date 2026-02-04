@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.6.2";
+const APP_VERSION = "standalone-2.6.3";
 
 
 function escHtml(str) {
@@ -4112,7 +4112,7 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
     // Accept both [0..1] and [0..100] inputs
     const val = (x <= 1.2) ? (x * 100) : x;
     return `${Math.round(val)}%`;
-  }%`; }
+  }
 
   function levelTag(level){
     const l = String(level||"").toLowerCase();
