@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.5.5";
+const APP_VERSION = "standalone-2.5.6";
 const DB_NAME = "m3_audit_standalone";
 const DB_VERSION = 1;
 const STORE_AUDITS = "audits";
@@ -223,6 +223,12 @@ criteriaCount: "Critères",
     auditNotFoundTitle: "Audit introuvable",
     auditNotFoundBody: "Cet audit n’existe pas (ou a été supprimé).",
     updatedLabel: "Maj",
+    exportHtmlClient: "Exporter rapport client (HTML)",
+    actionPlanTitle: "Plan d'action",
+    addRow: "Ajouter une ligne",
+    saveActionPlan: "Enregistrer",
+    saved: "Enregistr\u00e9",
+    actionPlanHint: "Ce plan d\u2019action est \u00e9ditable. Il sera utilis\u00e9 dans l\u2019export du rapport client.",
   },
   en: {
     appTitle: "M3 Smart Sustainable Standard - Audit Tool",
@@ -585,6 +591,12 @@ function showToast(message){
   setTimeout(()=>{
     el.classList.remove("show");
     setTimeout(()=> el.remove(), 250);
+    exportHtmlClient: "Export client report (HTML)",
+    actionPlanTitle: "Action plan",
+    addRow: "Add row",
+    saveActionPlan: "Save",
+    saved: "Saved",
+    actionPlanHint: "This action plan is editable and will be used in the client report export.",
   }, 1200);
 }
 
@@ -1097,6 +1109,44 @@ async function sbGetCertLevels(){
   if (error || !Array.isArray(data) || !data.length) return DEFAULT_CERT_LEVELS;
   return data;
 }
+
+// ---------------------------------------------------------------------------
+// Action plan (editable, stored in DB)
+// ---------------------------------------------------------------------------
+async function sbListActionPlanItems(auditId){
+  if (!ONLINE_ENABLED) return [];
+  await initSupabase();
+  const { data, error } = await SB
+    .from("v8_audit_action_plan_items")
+    .select("*")
+    .eq("audit_id", auditId)
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+async function sbUpsertActionPlanItems(items){
+  if (!ONLINE_ENABLED) throw new Error("ONLINE_DISABLED");
+  await initSupabase();
+  const { data, error } = await SB
+    .from("v8_audit_action_plan_items")
+    .upsert(items, { onConflict: "id" })
+    .select("*");
+  if (error) throw error;
+  return data || [];
+}
+
+async function sbDeleteActionPlanItem(id){
+  if (!ONLINE_ENABLED) throw new Error("ONLINE_DISABLED");
+  await initSupabase();
+  const { error } = await SB
+    .from("v8_audit_action_plan_items")
+    .delete()
+    .eq("id", id);
+  if (error) throw error;
+  return true;
+}
+
 
 async function loadCertLevels(){
   if (CERT_LEVELS_CACHE) return CERT_LEVELS_CACHE;
@@ -3441,6 +3491,18 @@ async function viewReport(auditId){
     downloadText(fn, html, "text/html");
   }}, t("exportHtml"));
 
+  const exportHTMLClientBtn = h("button",{onclick: async ()=>{
+    try{
+      const apItems = await sbListActionPlanItems(auditId).catch(()=>[]);
+      const html = buildReportHTMLClientV2(row, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities, certLabel, pillarMinPct, apItems, criteria, responses);
+      const fn = `M3_Report_Client_${(row.meta.siteName||"site").replaceAll(" ","_")}.html`;
+      downloadText(fn, html, "text/html");
+    }catch(e){
+      alert((e && e.message) ? e.message : String(e));
+    }
+  }}, t("exportHtmlClient"));
+
+
   const shareBtn = (!ONLINE_ENABLED) ? null : h("button",{onclick: async ()=>{
     try{
       const res = await sbCreateReportLink(auditId);
@@ -3548,11 +3610,122 @@ const exportExcelBtn = h("button",{onclick: ()=>{
     }
   }
 
+  // Action plan (editable)
+  let apItems = [];
+  try{
+    apItems = await sbListActionPlanItems(auditId);
+  }catch(e){
+    apItems = [];
+  }
+  if (!Array.isArray(apItems)) apItems = [];
+  apItems.sort((a,b)=> (a.sort_order||0) - (b.sort_order||0));
+
+  const apState = { items: apItems.map(x=>({...x})) };
+
+  function addActionRow(){
+    apState.items.push({
+      id: (globalThis.crypto && globalThis.crypto.randomUUID) ? globalThis.crypto.randomUUID() : String(Math.random()).slice(2),
+      audit_id: auditId,
+      sort_order: apState.items.length + 1,
+      horizon: "",
+      priority: "",
+      pillar: "",
+      facility: "",
+      action: "",
+      owner: "",
+      due_date: "",
+      budget: "",
+      status: ""
+    });
+    renderActionPlan();
+  }
+
+  async function saveActionPlan(){
+    try{
+      const payload = apState.items.map((it, idx)=>({
+        id: it.id,
+        audit_id: auditId,
+        sort_order: idx + 1,
+        horizon: it.horizon || "",
+        priority: it.priority || "",
+        pillar: it.pillar || "",
+        facility: it.facility || "",
+        action: it.action || "",
+        owner: it.owner || "",
+        due_date: it.due_date || null,
+        budget: it.budget || "",
+        status: it.status || "",
+        created_by: CURRENT_USER?.id || null
+      }));
+      await sbUpsertActionPlanItems(payload);
+      showToast(t("saved"));
+    }catch(e){
+      alert((e && e.message) ? e.message : String(e));
+    }
+  }
+
+  const apList = h("div",{});
+  function renderActionPlan(){
+    apList.innerHTML = "";
+    const head = h("div",{class:"row-between", style:"align-items:center; gap:10px; flex-wrap:wrap"},
+      h("div",{class:"small muted"}, t("actionPlanHint")),
+      h("div",{class:"row", style:"gap:10px; flex-wrap:wrap"},
+        h("button",{onclick:addActionRow}, t("addRow")),
+        h("button",{class:"primary", onclick:saveActionPlan}, t("saveActionPlan"))
+      )
+    );
+    apList.appendChild(head);
+
+    if (!apState.items.length){
+      apList.appendChild(h("div",{class:"small muted", style:"margin-top:10px"}, "—"));
+      return;
+    }
+
+    const table = h("table",{style:"margin-top:10px"});
+    table.appendChild(h("thead",{},
+      h("tr",{},
+        h("th",{}, "Horizon"),
+        h("th",{}, "Prio"),
+        h("th",{}, "Pillar"),
+        h("th",{}, "Facility"),
+        h("th",{}, "Action"),
+        h("th",{}, "Owner"),
+        h("th",{}, "Due"),
+        h("th",{}, "Budget"),
+        h("th",{}, "Status")
+      )
+    ));
+
+    const tbody = h("tbody",{});
+    apState.items.forEach((it, idx)=>{
+      const inTxt = (key, ph="") => h("input",{value: it[key]||"", placeholder: ph, oninput:(e)=>{ it[key]=e.target.value; }});
+      const inArea = (key, ph="") => h("textarea",{style:"min-height:46px; width:100%; resize:vertical", placeholder: ph, oninput:(e)=>{ it[key]=e.target.value; }}, it[key]||"");
+      const inDate = (key) => h("input",{type:"date", value: it[key]||"", oninput:(e)=>{ it[key]=e.target.value; }});
+
+      tbody.appendChild(h("tr",{},
+        h("td",{}, inTxt("horizon","0–90d")),
+        h("td",{}, inTxt("priority","P1")),
+        h("td",{}, inTxt("pillar","Innovation")),
+        h("td",{}, inTxt("facility","Marina")),
+        h("td",{}, inArea("action","Action…")),
+        h("td",{}, inTxt("owner","Owner")),
+        h("td",{}, inDate("due_date")),
+        h("td",{}, inTxt("budget","€")),
+        h("td",{}, inTxt("status","Open"))
+      ));
+    });
+    table.appendChild(tbody);
+    apList.appendChild(table);
+  }
+  renderActionPlan();
+
+
+
   const root = h("div",{},
     topBar({
       title: `${t("reportTitle")} — ${row.meta.siteName}`,
       subtitle: `${t("auditorLabel")}: ${row.meta.auditorName} • ${t("facilities")}: ${(auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(", ") : t("all")} • ${t("overallWeightedScore")}: ${overall.pct.toFixed(2)}%`,
-      right: h("div",{class:"row"}, backBtn, exportJsonBtn, exportExcelBtn, exportHTMLBtn, shareBtn, printBtn)
+      right: h("div",{class:"row"}, backBtn, exportJsonBtn, exportExcelBtn, exportHTMLBtn, exportHTMLClientBtn, shareBtn, printBtn)
     }),
     h("div",{class:"wrap grid", style:"gap:12px"},
       h("div",{class:"card"},
@@ -3581,6 +3754,10 @@ const exportExcelBtn = h("button",{onclick: ()=>{
       h("div",{class:"card"},
         h("div",{class:"h2"}, t("reportNC")),
         h("div",{style:"margin-top:10px"}, ncWrap)
+      ),
+      h("div",{class:"card"},
+        h("div",{class:"h2"}, t("actionPlanTitle")),
+        h("div",{style:"margin-top:10px"}, apList)
       ),
       h("div",{class:"small muted"}, t("pdfTip"))
     )
@@ -3859,6 +4036,327 @@ function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncI
   </div>
 </body></html>`;
 }
+
+function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacility, ncItems, criteriaCount, auditedFacilities, certLabel, pillarMinPct, actionPlanItems, criteria, responses){
+  const L = (lang === "en") ? "en" : "fr";
+  const dict = I18N[L] || I18N.fr;
+  const lt = (k)=> (dict && dict[k]) ? dict[k] : (I18N.fr[k] || k);
+
+  const siteName = audit?.meta?.siteName || "Site";
+  const auditorName = audit?.meta?.auditorName || audit?.meta?.auditor || "—";
+  const created = audit?.meta?.createdAtISO ? new Date(audit.meta.createdAtISO) : null;
+  const updated = audit?.updatedAtISO ? new Date(audit.updatedAtISO) : null;
+
+  const fmtDate = (d)=> d ? d.toLocaleDateString() : "";
+  const facilitiesStr = (auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(", ") : (dbData.facilities||[]).join(", ");
+
+  const pillars = Array.from(new Set((criteria||[]).map(c=> c.pillar || "—"))).filter(Boolean).sort();
+
+  const lvlOrder = { "Major":0, "Minor":1, "Observation":2, "OK":9 };
+
+  const top5ByPillar = (pillar)=>{
+    const scored = (criteria||[])
+      .filter(c=> (c.pillar||"—")===pillar)
+      .map(c=>{
+        const r = (responses||{})[c.id];
+        const s = (r && !r.na && r.score!==null && r.score!==undefined) ? Number(r.score) : null;
+        return { c, score:s };
+      })
+      .filter(x=> x.score!==null && isFinite(x.score))
+      .sort((a,b)=> b.score - a.score)
+      .slice(0,5);
+    return scored;
+  };
+
+  const ncByPillar = (pillar)=>{
+    return (ncItems||[])
+      .filter(it=> (it.c?.pillar||"—")===pillar)
+      .sort((a,b)=> (lvlOrder[a.lvl]??99) - (lvlOrder[b.lvl]??99));
+  };
+
+  const ap = Array.isArray(actionPlanItems) ? actionPlanItems : [];
+  const apSorted = ap.slice().sort((a,b)=> (a.sort_order||0)-(b.sort_order||0));
+  const apRows = apSorted.length ? apSorted : [];
+
+  const css = `
+  :root{
+    --ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--bg:#f4f7fb;--card:#ffffff;
+    --accent:#1d5d86;--accent2:#0ea5e9;--ok:#16a34a;--warn:#f59e0b;--bad:#ef4444;
+    --r:16px;--shadow:0 10px 30px rgba(2,6,23,.08);
+    --font: system-ui,-apple-system,Segoe UI,Roboto,Arial;
+    --mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--font);color:var(--ink);background:#fff}
+  .page{width:210mm;min-height:297mm;margin:0 auto;border-bottom:1px solid #fff;position:relative;page-break-after:always}
+  .page:last-child{page-break-after:auto}
+  .header{
+    height:14mm;border-bottom:1px solid var(--line);
+    background:linear-gradient(90deg, rgba(29,93,134,.14), rgba(14,165,233,.06));
+    display:flex;align-items:center;gap:12px;padding:0 12mm;
+  }
+  .logo{width:30px;height:30px;border-radius:12px;background:rgba(29,93,134,.18);display:grid;place-items:center;color:var(--accent);font-weight:900}
+  .ht{display:flex;flex-direction:column;line-height:1.05}
+  .ht .top{font-size:10px;color:var(--muted);font-weight:800}
+  .ht .main{font-size:12px;font-weight:950}
+  .hm{margin-left:auto;text-align:right;font-size:10px;color:var(--muted)}
+  .inner{padding:12mm 12mm 10mm 12mm;display:flex;flex-direction:column;gap:10px}
+  h1{font-size:26px;margin:0}
+  h2{font-size:14px;margin:0;color:var(--accent)}
+  .title-big{font-size:32px;font-weight:1000;letter-spacing:.02em;margin:0}
+  .subtitle{font-size:11px;color:var(--muted);font-weight:750}
+  .grid{display:grid;gap:10px}
+  .cols-2{grid-template-columns:1.15fr .85fr}
+  .cols-3{grid-template-columns:1fr 1fr 1fr}
+  .card{border:1px solid var(--line);border-radius:var(--r);padding:10px;background:var(--card)}
+  .card.soft{background:linear-gradient(180deg, rgba(29,93,134,.06), rgba(2,6,23,0))}
+  .row{display:flex;gap:10px;align-items:center;justify-content:space-between}
+  .kpi{display:flex;gap:14px;flex-wrap:wrap;align-items:baseline}
+  .kpi .num{font-size:24px;font-weight:1000;color:var(--accent)}
+  .kpi .lbl{font-size:10px;font-weight:900;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:rgba(2,6,23,.02);padding:6px 10px;border-radius:999px;font-size:11px;font-weight:900}
+  .pill .dot{width:9px;height:9px;border-radius:999px;background:var(--accent)}
+  .pill.ok .dot{background:var(--ok)} .pill.warn .dot{background:var(--warn)} .pill.bad .dot{background:var(--bad)}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:11px}
+  th,td{border-bottom:1px solid var(--line);padding:7px 8px;vertical-align:top}
+  th{color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-size:9px;text-align:left}
+  tr:last-child td{border-bottom:none}
+  .tag{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;border:1px solid var(--line);font-weight:900;font-size:10px;background:rgba(2,6,23,.02);white-space:nowrap}
+  .tag.major{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.10);color:#991b1b}
+  .tag.minor{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.12);color:#92400e}
+  .tag.obs{border-color:rgba(29,93,134,.35);background:rgba(29,93,134,.10);color:#0b3d5a}
+  .tag.ok{border-color:rgba(22,163,74,.35);background:rgba(22,163,74,.10);color:#14532d}
+  .small{font-size:11px}
+  .muted{color:var(--muted)}
+  @media print{
+    body{background:#fff}
+    .page{page-break-after:always}
+    .page:last-child{page-break-after:auto}
+  }
+  `;
+
+  const tag = (lvl)=>{
+    if (lvl==="Major") return `<span class="tag major">Major</span>`;
+    if (lvl==="Minor") return `<span class="tag minor">Minor</span>`;
+    if (lvl==="Observation") return `<span class="tag obs">Obs</span>`;
+    return `<span class="tag ok">OK</span>`;
+  };
+
+  const header = (main, metaRight)=>`
+    <div class="header">
+      <div class="logo">M3</div>
+      <div class="ht">
+        <div class="top">M3 Smart Sustainable Standard — Audit Report</div>
+        <div class="main">${esc(main)}</div>
+      </div>
+      <div class="hm">${metaRight || ""}</div>
+    </div>
+  `;
+
+  const decisionPage = `
+  <section class="page">
+    ${header(`Client: ${siteName} (Client Report v2)`, `Audit ID: <span style="font-family:var(--mono)">${esc(String(audit.audit_id||audit.id||"—"))}</span><br/>Date: ${esc(fmtDate(updated)||fmtDate(created))} • Lang: ${esc(L.toUpperCase())}`)}
+    <div class="inner">
+      <div class="pill ok"><span class="dot"></span><span class="muted">Certification level</span><span style="font-weight:1000">${esc(String(certLabel||"—"))}</span></div>
+      <div>
+        <div class="title-big">${esc(String(certLabel||"—"))} CERTIFICATION</div>
+        <div class="subtitle">Decision based on dual-threshold rule (overall + minimum pillar).</div>
+      </div>
+
+      <div class="grid cols-2">
+        <div class="card soft">
+          <div class="row"><div style="font-weight:1000">Score summary</div><div class="muted">Auto-generated</div></div>
+          <div class="kpi" style="margin-top:8px">
+            <div><div class="num">${Number(overall?.pct||0).toFixed(2)}%</div><div class="lbl">Overall</div></div>
+            <div><div class="num">${Number(pillarMinPct||0).toFixed(2)}%</div><div class="lbl">Min pillar</div></div>
+            <div><div class="num">${(ncItems||[]).length}</div><div class="lbl">NC open</div></div>
+          </div>
+          <div style="height:1px;background:var(--line);margin:10px 0"></div>
+          <table>
+            <tr><th style="width:36%">Scope</th><td>${esc(facilitiesStr)}</td><td style="width:14%"><span class="tag ok">IN</span></td></tr>
+            <tr><th>Rules</th><td><b>Overall</b> + <b>Pillar floors</b></td><td><span class="tag ok">AUTO</span></td></tr>
+            <tr><th>Updated</th><td>${esc(fmtDate(updated)||fmtDate(created))}</td><td><span class="tag ok">OK</span></td></tr>
+          </table>
+        </div>
+        <div class="card">
+          <div class="row"><div style="font-weight:1000">Validity & next steps</div><div class="muted">Client-facing</div></div>
+          <table style="margin-top:8px">
+            <tr><th style="width:42%">Validity</th><td><b>36 months</b> (surveillance M12 & M24)</td></tr>
+            <tr><th>Conditions</th><td>Close remaining <b>Major</b> NCs within agreed timeline + evidence pack.</td></tr>
+            <tr><th>Deliverables</th><td>Report • Action plan • Evidence register</td></tr>
+            <tr><th>Next step</th><td>Confirm owners • Validate action plan • Schedule surveillance</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row"><div style="font-weight:1000">Methodology (compact)</div><div class="muted">Standard blocks</div></div>
+        <div class="grid cols-3" style="margin-top:8px">
+          <div><div style="font-weight:900">Method</div><div class="small muted">Documents, interviews, onsite checks, evidence sampling.</div></div>
+          <div><div style="font-weight:900">Scoring</div><div class="small muted">0–5 scale + N/A, weighted per pillar and facility.</div></div>
+          <div><div style="font-weight:900">NC</div><div class="small muted">Major / Minor / Observation derived from score & criticality.</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+  `;
+
+  const dashboardPage = `
+  <section class="page">
+    ${header("Pillar dashboard", "Section 2 / —")}
+    <div class="inner">
+      <h1>Pillar Dashboard</h1>
+      <div class="subtitle">Scores by pillar and NC distribution.</div>
+      <div class="card" style="margin-top:8px">
+        <table>
+          <tr><th style="width:40%">Pillar</th><th style="width:14%">Score</th><th style="width:18%">NC</th><th>Notes</th></tr>
+          ${byPillar.map(p=>{
+            const n = ncItems.filter(it=> (it.c?.pillar||"—")===p.label).length;
+            return `<tr>
+              <td><b>${esc(p.label)}</b></td>
+              <td>${Number(p.pct||0).toFixed(2)}%</td>
+              <td>${n}</td>
+              <td class="muted">${esc(p.sub||"")}</td>
+            </tr>`;
+          }).join("")}
+        </table>
+      </div>
+      <div class="card soft">
+        <div class="row"><div style="font-weight:1000">Highlights (Top 5 per pillar)</div><div class="muted">See next pages</div></div>
+        <div class="small muted" style="margin-top:6px">Each pillar deep-dive contains: Top 5 criteria + NC & recommendations (most important section).</div>
+      </div>
+    </div>
+  </section>
+  `;
+
+  const pillarPages = pillars.map(pillar=>{
+    const top5 = top5ByPillar(pillar);
+    const ncs = ncByPillar(pillar);
+    const scoreObj = byPillar.find(x=> x.label===pillar);
+    const scorePct = scoreObj ? Number(scoreObj.pct||0).toFixed(2) : "—";
+
+    const top5Table = top5.length ? `
+      <table>
+        <tr><th style="width:12%">ID</th><th>Criterion</th><th style="width:18%">Facility</th><th style="width:12%">Score</th></tr>
+        ${top5.map(x=>`
+          <tr>
+            <td style="font-family:var(--mono)">${esc(x.c.id)}</td>
+            <td>${esc(x.c.title||"")}</td>
+            <td>${esc(x.c.facility||"")}</td>
+            <td><span class="tag ok">${esc(String(x.score))}</span></td>
+          </tr>
+        `).join("")}
+      </table>
+    ` : `<div class="small muted">No scored criteria in this pillar.</div>`;
+
+    const ncTable = ncs.length ? `
+      <table>
+        <tr><th style="width:12%">ID</th><th style="width:16%">Level</th><th>Finding & Recommendation</th></tr>
+        ${ncs.map(it=>{
+          const finding = (it.r?.gapObserved||"").trim();
+          const rec = (it.r?.action||"").trim();
+          const evidence = (it.r?.evidence||"").trim();
+          const block = `
+            ${finding ? `<b>Finding:</b> ${esc(finding)}<br/>` : ``}
+            ${rec ? `<b>Recommendation:</b> ${esc(rec)}<br/>` : ``}
+            ${evidence ? `<span class="muted">Evidence:</span> <span class="muted">${esc(evidence)}</span>` : ``}
+          `;
+          return `<tr>
+            <td style="font-family:var(--mono)">${esc(it.c.id)}</td>
+            <td>${tag(it.lvl)}</td>
+            <td>${block}</td>
+          </tr>`;
+        }).join("")}
+      </table>
+    ` : `<div class="small muted">No non-conformities in this pillar.</div>`;
+
+    return `
+    <section class="page">
+      ${header(`Pillar Deep‑Dive — ${pillar}`, "Section 3 / —")}
+      <div class="inner">
+        <div class="row">
+          <div>
+            <h1>${esc(pillar)}</h1>
+            <div class="subtitle">Top 5 + NC & recommendations (per pillar)</div>
+          </div>
+          <div class="pill ${Number(scorePct)>=80 ? "ok" : (Number(scorePct)>=70 ? "warn" : "bad")}"><span class="dot"></span><span class="muted">Pillar score</span><span style="font-weight:1000">${esc(scorePct)}%</span></div>
+        </div>
+
+        <!-- STACKED layout: Top 5 then NC below -->
+        <div class="card">
+          <div class="row"><div style="font-weight:1000">Top 5 criteria</div><div class="muted">Best scoring with evidence</div></div>
+          <div style="margin-top:8px">${top5Table}</div>
+        </div>
+
+        <div class="card soft">
+          <div class="row"><div style="font-weight:1000">NC register (this pillar)</div><div class="muted">Most important section</div></div>
+          <div style="margin-top:8px">${ncTable}</div>
+        </div>
+
+        <div class="small muted">Per-pillar: Top 5 + NC register generated from the tool (auditor recommendations reused).</div>
+      </div>
+    </section>
+    `;
+  }).join("");
+
+  const actionPlanPage = `
+  <section class="page">
+    ${header(lt("actionPlanTitle"), "Section 5 / —")}
+    <div class="inner">
+      <h1>${esc(lt("actionPlanTitle"))}</h1>
+      <div class="subtitle">Prioritized roadmap derived from NCs (editable in the tool).</div>
+
+      <div class="card">
+        ${apRows.length ? `
+        <table>
+          <tr>
+            <th style="width:12%">Horizon</th>
+            <th style="width:8%">Prio</th>
+            <th style="width:16%">Pillar</th>
+            <th style="width:14%">Facility</th>
+            <th>Action</th>
+            <th style="width:12%">Owner</th>
+            <th style="width:10%">Due</th>
+            <th style="width:12%">Budget</th>
+            <th style="width:10%">Status</th>
+          </tr>
+          ${apRows.map(r=>`
+            <tr>
+              <td><b>${esc(r.horizon||"")}</b></td>
+              <td>${esc(r.priority||"")}</td>
+              <td>${esc(r.pillar||"")}</td>
+              <td>${esc(r.facility||"")}</td>
+              <td>${esc(r.action||"")}</td>
+              <td>${esc(r.owner||"")}</td>
+              <td>${esc(r.due_date||"")}</td>
+              <td>${esc(r.budget||"")}</td>
+              <td>${esc(r.status||"")}</td>
+            </tr>
+          `).join("")}
+        </table>
+        ` : `<div class="small muted">No action plan rows yet.</div>`}
+      </div>
+
+      <div class="card soft">
+        <div class="row"><div style="font-weight:1000">Governance cadence</div><div class="muted">Suggested</div></div>
+        <div class="small muted" style="margin-top:8px">
+          D+30: evidence pack structure validated • D+60: closure review for Major NCs • Quarterly: KPI dashboard & supplier scorecards • M12: surveillance milestone
+        </div>
+      </div>
+    </div>
+  </section>
+  `;
+
+  const html = `<!doctype html><html lang="${esc(L)}"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>${esc(siteName)} — M3 Audit Report (Client v2)</title><style>${css}</style></head><body>
+    ${decisionPage}
+    ${dashboardPage}
+    ${pillarPages}
+    ${actionPlanPage}
+  </body></html>`;
+  return html;
+}
+
 
 async function render(){ await route(); }
 
