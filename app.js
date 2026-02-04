@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.6.5";
+const APP_VERSION = "standalone-2.6.6";
 
 
 function escHtml(str) {
@@ -14,6 +14,15 @@ function escHtml(str) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+function criterionShortTitle(c){
+  const raw = (c && (c.short_title || c.shortTitle || c.title || c.criterion || c.name || c.label || c.question))
+    ? String(c.short_title || c.shortTitle || c.title || c.criterion || c.name || c.label || c.question)
+    : "";
+  // Keep it short, single line
+  return raw.replace(/\s+/g,' ').trim().slice(0, 80);
+}
+
 const DB_NAME = "m3_audit_standalone";
 const DB_VERSION = 1;
 const STORE_AUDITS = "audits";
@@ -3953,19 +3962,7 @@ function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncI
   const L = (lang === "en") ? "en" : "fr";
   const dict = I18N[L] || I18N.fr;
   const lt = (k)=> (dict && dict[k]) ? dict[k] : (I18N.fr[k] || k);
-
-  // Short criterion label for client reports (keeps ID as secondary line)
-function criterionShortTitle(c){
-  const raw = (c && (c.short_title || c.shortTitle || c.title || c.criterion || c.name || c.label || c.question))
-    ? String(c.short_title || c.shortTitle || c.title || c.criterion || c.name || c.label || c.question)
-    : "";
-  const s = raw.replace(/\s+/g,' ').trim();
-  if (!s) return (c && c.id) ? String(c.id) : "";
-  if (s.length <= 70) return s;
-  const cut = s.slice(0, 67);
-  const lastSpace = cut.lastIndexOf(' ');
-  return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut) + '…';
-}
+  // Short criterion label helper (global): criterionShortTitle(c)
 
 const created = audit.meta?.createdAtISO ? new Date(audit.meta.createdAtISO).toLocaleString() : "";
   const updated = audit.updatedAtISO ? new Date(audit.updatedAtISO).toLocaleString() : "";
@@ -4446,7 +4443,7 @@ async function route(){
     const params = rawHash.slice(1);
     const qs = new URLSearchParams(params);
     const typ = (qs.get('type') || '').toLowerCase();
-    const target = (typ === 'recovery' || typ === 'invite') ? '#/update-password' : '#/';
+    const target = (typ === 'recovery' || typ === 'invite') ? ('#/update-password?' + params) : ('#/?' + params);
     if (typ === 'recovery' || typ === 'invite'){
       try{ sessionStorage.setItem(FORCE_PWD_KEY, typ); }catch{}
     }
