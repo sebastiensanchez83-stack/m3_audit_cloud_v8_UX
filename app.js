@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.5.3";
+const APP_VERSION = "standalone-2.5.4";
 const DB_NAME = "m3_audit_standalone";
 const DB_VERSION = 1;
 const STORE_AUDITS = "audits";
@@ -593,7 +593,7 @@ function updateFooter(){
   const dataHint = (typeof ONLINE_ENABLED !== "undefined" && ONLINE_ENABLED) ? t("onlineDataHint") : t("localDataHint");
   if (ft) ft.textContent = `${dataHint} • ${t("footerHint")}`;
   const fh = document.getElementById("footerHome");
-  if (fh) fh.textContent = t("home");
+  if (fh) { fh.textContent = t("home"); fh.style.display = "none"; }
 }
 
 function topBar({title, subtitle, right} = {}){
@@ -3291,7 +3291,9 @@ if (ONLINE_ENABLED){
   renderPhotos();
 
   const backBtn = h("button",{onclick: ()=> go(`#/audit/${auditId}`)}, t("back"));
-  const saveBtn = h("button",{class:"primary", onclick: onSave}, t("saveNext"));
+  const homeBtn = h("button",{onclick: ()=> go("#/")}, t("home"));
+  
+const saveBtn = h("button",{class:"primary", onclick: onSave}, t("saveNext"));
 
 
 // Acquire criterion lock (online) so that only one auditor edits at a time.
@@ -3384,8 +3386,10 @@ async function viewReport(auditId){
       topBar({
         title: t("lockedTitle"),
         subtitle: missingMsg,
-        right: h("button",{onclick:()=>go(`#/audit/${auditId}`)}, t("back"))
-      }),
+        right: h("div",{class:"row"},
+          h("button",{onclick:()=>go("#/")}, t("home")),
+          h("button",{onclick:()=>go(`#/audit/${auditId}`)}, t("back"))
+        )}),
       h("div",{class:"wrap"},
         h("div",{class:"card"},
           h("div",{class:"h2"}, t("lockedAction")),
@@ -3432,7 +3436,7 @@ async function viewReport(auditId){
   }
 
   const exportHTMLBtn = h("button",{onclick: ()=>{
-    const html = buildReportHTML(row, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities);
+    const html = buildReportHTML(row, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities, certLabel, pillarMinPct);
     const fn = `M3_Report_${(row.meta.siteName||"site").replaceAll(" ","_")}.html`;
     downloadText(fn, html, "text/html");
   }}, t("exportHtml"));
@@ -3548,10 +3552,12 @@ const exportExcelBtn = h("button",{onclick: ()=>{
     topBar({
       title: `${t("reportTitle")} — ${row.meta.siteName}`,
       subtitle: `${t("auditorLabel")}: ${row.meta.auditorName} • ${t("facilities")}: ${(auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(", ") : t("all")} • ${t("overallWeightedScore")}: ${overall.pct.toFixed(2)}%`,
-      right: h("div",{class:"row"}, backBtn, exportJsonBtn, exportExcelBtn, exportHTMLBtn, shareBtn, printBtn)
+      right: h("div",{class:"row"}, homeBtn, backBtn, exportJsonBtn, exportExcelBtn, exportHTMLBtn, shareBtn, printBtn)
     }),
     h("div",{class:"wrap grid", style:"gap:12px"},
       h("div",{class:"card"},
+        h("div",{class:"h1", style:"font-size:44px;font-weight:900;letter-spacing:-0.02em;line-height:1.05;margin:0;text-align:center"}, certLabel),
+        h("div",{class:"small muted", style:"text-align:center;margin-top:6px;margin-bottom:14px"}, `${t("certPillarMinLabel")}: ${pillarMinPct.toFixed(2)}% • ${t("overallWeightedScore")}: ${overall.pct.toFixed(2)}%`),
         h("div",{class:"h2"}, t("reportSummary")),
         h("div",{class:"row", style:"margin-top:10px"},
           h("span",{class:"pill"}, `${t("criteriaLabel")}: ${criteria.length}`),
@@ -3597,7 +3603,7 @@ async function viewPublicReport(token){
 
   if (!audit){
     const root = h('div',{},
-      topBar({title: t('publicReportTitle'), subtitle: t('publicReportInvalidSubtitle'), right: h('div',{class:'row'}, h('a',{class:'btn', href:'#/login'}, t('signIn')) )}),
+      topBar({title: t('publicReportTitle'), subtitle: t('publicReportInvalidSubtitle'), right: h('div',{class:'row'}, h('button',{onclick:()=>go('#/')}, t('home')), h('a',{class:'btn', href:'#/login'}, t('signIn')) )}),
       h('div',{class:'wrap'}, h('div',{class:'card'},
         h('div',{class:'h2'}, t('publicReportInvalidTitle')),
         h('div',{class:'small', style:'margin-top:8px'}, t('publicReportInvalidBody'))
@@ -3625,6 +3631,11 @@ async function viewPublicReport(token){
       return { label: k, pct: s.pct, sub: `ΣW=${Math.round(s.sumW)} • ΣPts=${Math.round(s.sumPts)}` };
     })
     .sort((a,b)=> b.pct - a.pct);
+
+  const certLevels = await loadCertLevels();
+  const certRes = computeCertification(overall.pct, byPillar, certLevels);
+  const certLabel = certRes.best ? certRes.best.display_name : t("certNotQualified");
+  const pillarMinPct = certRes.minPillar * 100;
 
   const ncItems = [];
   for (const c of criteria){
@@ -3714,7 +3725,7 @@ async function viewPublicReport(token){
   }
 
   const exportHTMLBtn = h('button',{onclick: ()=>{
-    const html = buildReportHTML(audit, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities);
+    const html = buildReportHTML(audit, dbData, LANG, overall, byPillar, byFacility, ncItems, criteria.length, auditedFacilities, certLabel, pillarMinPct);
     const fn = `M3_Report_${(audit.meta?.siteName||"site").replaceAll(" ","_")}.html`;
     downloadText(fn, html, 'text/html');
   }}, t('exportHtml'));
@@ -3725,10 +3736,12 @@ async function viewPublicReport(token){
     topBar({
       title: `${t('reportTitle')} — ${(audit.meta?.siteName||'')}`,
       subtitle: `${t('facilities')}: ${(auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(', ') : t('all')} • ${t('overallWeightedScore')}: ${overall.pct.toFixed(2)}%`,
-      right: h('div',{class:'row'}, exportHTMLBtn, printBtn)
+      right: h('div',{class:'row'}, homeBtn, exportHTMLBtn, printBtn)
     }),
     h('div',{class:'wrap grid', style:'gap:12px'},
       h('div',{class:'card'},
+        h('div',{class:'h1', style:'font-size:44px;font-weight:900;letter-spacing:-0.02em;line-height:1.05;margin:0;text-align:center'}, certLabel),
+        h('div',{class:'small muted', style:'text-align:center;margin-top:6px;margin-bottom:14px'}, `${t('certPillarMinLabel')}: ${pillarMinPct.toFixed(2)}% • ${t('overallWeightedScore')}: ${overall.pct.toFixed(2)}%`),
         h('div',{class:'h2'}, t('reportSummary')),
         h('div',{class:'row', style:'margin-top:10px'},
           h('span',{class:'pill'}, `${t('criteriaLabel')}: ${criteria.length}`),
@@ -3754,13 +3767,16 @@ function esc(s){
   return String(s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 }
 
-function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncItems, criteriaCount, auditedFacilities){
+function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncItems, criteriaCount, auditedFacilities, certLabel, pillarMinPct){
   const L = (lang === "en") ? "en" : "fr";
   const dict = I18N[L] || I18N.fr;
   const lt = (k)=> (dict && dict[k]) ? dict[k] : (I18N.fr[k] || k);
 
   const created = audit.meta?.createdAtISO ? new Date(audit.meta.createdAtISO).toLocaleString() : "";
   const updated = audit.updatedAtISO ? new Date(audit.updatedAtISO).toLocaleString() : "";
+
+  const certTitle = (certLabel !== undefined && certLabel !== null) ? String(certLabel) : "";
+  const pillarMinStr = (pillarMinPct !== undefined && pillarMinPct !== null && isFinite(Number(pillarMinPct))) ? `${Number(pillarMinPct).toFixed(2)}%` : "";
 
   const css = `
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;color:#111}
@@ -3820,10 +3836,14 @@ function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncI
   <div class="muted">${esc(lt("auditorLabel"))}: ${esc(audit.meta.auditorName)} • ${esc(lt("facilities"))}: ${esc((auditedFacilities && auditedFacilities.length) ? auditedFacilities.join(", ") : lt("all"))} • ${esc(L==="en"?"Created":"Créé")}: ${esc(created)} • ${esc(L==="en"?"Updated":"Mis à jour")}: ${esc(updated)}</div>
 
   <div class="section">
+    ${certTitle ? `<div style="font-size:44px;font-weight:900;letter-spacing:-0.02em;line-height:1.05;margin:0;text-align:center">${esc(certTitle)}</div>` : ""}
+    ${(certTitle && pillarMinStr) ? `<div style="text-align:center;margin-top:6px;margin-bottom:14px;color:#556">${esc(lt("certPillarMinLabel"))}: ${esc(pillarMinStr)} • ${esc(lt("overallWeightedScore"))}: ${esc(Number(overall.pct).toFixed(2))}%</div>` : ""}
     <h2>${esc(lt("reportSummary"))}</h2>
     <div>
       <span class="pill">${esc(lt("criteriaLabel"))}: ${criteriaCount}</span>
       <span class="pill">${esc(lt("ncLabel"))}: ${ncItems.length}</span>
+      <span class="pill">${esc(lt("certLevelLabel"))}: ${esc(certTitle || lt("certNotQualified"))}</span>
+      ${pillarMinStr ? `<span class="pill">${esc(lt("certPillarMinLabel"))}: ${esc(pillarMinStr)}</span>` : ""}
       <span class="pill">ΣW: ${Math.round(overall.sumW)}</span>
       <span class="pill">${esc(lt("scoreLabel"))}: ${overall.pct.toFixed(2)}%</span>
     </div>
