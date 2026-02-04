@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.6.1";
+const APP_VERSION = "standalone-2.6.2";
 
 
 function escHtml(str) {
@@ -4065,6 +4065,38 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
     if (id) critById[String(id)] = c;
   });
 
+
+  // Normalize inputs (overall can be {pct:..}, ncItems can be [{c,r,lvl}] or already normalized)
+  const overallPct = (overall && typeof overall === "object") ? Number(overall.pct) : Number(overall);
+  const minPillarPct = Number(pillarMinPct);
+
+  const normNc = (normNc||[]).map(nc=>{
+    // Shape from viewReport: { c, r, lvl }
+    if (nc && nc.c){
+      const c = nc.c || {};
+      const r = nc.r || {};
+      const id = String(c.id || c.criterion_id || c.code || "");
+      const title = String(c.title_short || c.short_title || c.shortTitle || c.title || c.name || id).trim();
+      const facility = String(c.facility || c.facility_key || c.facilityKey || (Array.isArray(c.facilities)? c.facilities[0] : "") || "");
+      const pillar = String(c.pillar || c.pillar_key || c.pillarKey || "");
+      const level = String(nc.lvl || nc.level || nc.ncLevel || "Observation");
+      const finding = String(r.finding || r.gap || r.observation || r.comment || r.note || "");
+      const recommendation = String(r.recommendation || r.reco || r.action || r.rec || "");
+      const evidence = String(r.evidence || r.proof || r.attachments || r.files || "");
+      return { id, title, facility, pillar, level, finding, recommendation, evidence };
+    }
+    // Already-normalized shape
+    const id = String(nc.id || nc.criterion_id || nc.code || "");
+    const title = String(nc.title || nc.shortTitle || nc.title_short || id).trim();
+    const facility = String(nc.facility || nc.facility_key || "");
+    const pillar = String(nc.pillar || nc.pillar_key || "");
+    const level = String(nc.level || nc.lvl || "Observation");
+    const finding = String(nc.finding || nc.gap || nc.observation || "");
+    const recommendation = String(nc.recommendation || nc.reco || nc.action || nc.rec || "");
+    const evidence = String(nc.evidence || nc.proof || "");
+    return { id, title, facility, pillar, level, finding, recommendation, evidence };
+  });
+
   // Pull a score from response (handles multiple shapes)
   function getScoreForCriterion(criterionId){
     const r = (responses||[]).find(x => String(x.criterion_id||x.criterionId||x.id) === String(criterionId));
@@ -4074,7 +4106,13 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
     return Number.isFinite(n) ? n : null;
   }
 
-  function pct(n){ return `${Math.round((Number(n)||0)*100)}%`; }
+  function pct(n){
+    const x = Number(n);
+    if (!Number.isFinite(x)) return "0%";
+    // Accept both [0..1] and [0..100] inputs
+    const val = (x <= 1.2) ? (x * 100) : x;
+    return `${Math.round(val)}%`;
+  }%`; }
 
   function levelTag(level){
     const l = String(level||"").toLowerCase();
@@ -4098,7 +4136,7 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
 
   // ---------- Per-pillar NC list (stacked below Top5) ----------
   function ncForPillar(pillarKey){
-    return (ncItems||[]).filter(nc => String(nc.pillar||nc.pillar_key||"").toLowerCase() === String(pillarKey||"").toLowerCase());
+    return (normNc||[]).filter(nc => String(nc.pillar||nc.pillar_key||"").toLowerCase() === String(pillarKey||"").toLowerCase());
   }
 
   // Pagination for NC table (client report)
