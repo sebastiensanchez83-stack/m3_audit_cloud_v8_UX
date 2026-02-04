@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.5.8";
+const APP_VERSION = "standalone-2.5.9";
 const DB_NAME = "m3_audit_standalone";
 const DB_VERSION = 1;
 const STORE_AUDITS = "audits";
@@ -3943,6 +3943,19 @@ function buildReportHTML(audit, dbData, lang, overall, byPillar, byFacility, ncI
   const dict = I18N[L] || I18N.fr;
   const lt = (k)=> (dict && dict[k]) ? dict[k] : (I18N.fr[k] || k);
 
+  // Short criterion label for client reports (keeps ID as secondary line)
+  const shortTitle = (c)=>{
+    const raw = (c && (c.short_title || c.shortTitle || c.title || c.criterion || c.name || c.label || c.question))
+      ? String(c.short_title || c.shortTitle || c.title || c.criterion || c.name || c.label || c.question)
+      : "";
+    const s = raw.replace(/\s+/g,' ').trim();
+    if (!s) return (c && c.id) ? String(c.id) : "";
+    if (s.length <= 70) return s;
+    const cut = s.slice(0, 67);
+    const lastSpace = cut.lastIndexOf(' ');
+    return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut) + '…';
+  };
+
   const created = audit.meta?.createdAtISO ? new Date(audit.meta.createdAtISO).toLocaleString() : "";
   const updated = audit.updatedAtISO ? new Date(audit.updatedAtISO).toLocaleString() : "";
 
@@ -4245,7 +4258,7 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
 
     const ncTable = ncs.length ? `
       <table>
-        <tr><th style="width:12%">ID</th><th style="width:16%">Level</th><th>Finding & Recommendation</th></tr>
+        <tr><th style="width:34%">Criterion</th><th style="width:16%">Level</th><th>Finding & Recommendation</th></tr>
         ${ncs.map(it=>{
           const finding = (it.r?.gapObserved||"").trim();
           const rec = (it.r?.action||"").trim();
@@ -4256,7 +4269,10 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
             ${evidence ? `<span class="muted">Evidence:</span> <span class="muted">${esc(evidence)}</span>` : ``}
           `;
           return `<tr>
-            <td style="font-family:var(--mono)">${esc(it.c.id)}</td>
+            <td>
+              <div style="font-weight:900">${esc(shortTitle(it.c))}</div>
+              <div class="small muted" style="margin-top:2px;font-family:var(--mono)">${esc(it.c.id)}</div>
+            </td>
             <td>${tag(it.lvl)}</td>
             <td>${block}</td>
           </tr>`;
