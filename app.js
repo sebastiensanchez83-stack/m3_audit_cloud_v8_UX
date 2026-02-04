@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.6.4";
+const APP_VERSION = "standalone-2.6.5";
 
 
 function escHtml(str) {
@@ -4099,9 +4099,20 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
 
   // Pull a score from response (handles multiple shapes)
   function getScoreForCriterion(criterionId){
-    const r = (responses||[]).find(x => String(x.criterion_id||x.criterionId||x.id) === String(criterionId));
-    if (!r) return null;
-    const s = r.score ?? r.value ?? r.rating ?? r.answer_score;
+    // Supports both shapes:
+    // 1) object map: responses[criterionId] = { score, na, ... }
+    // 2) array: [{ criterion_id, score, ... }]
+    const key = String(criterionId);
+    let r = null;
+
+    if (responses && typeof responses === "object" && !Array.isArray(responses)){
+      r = responses[key] || responses[Number.isFinite(+key) ? +key : key] || null;
+    } else if (Array.isArray(responses)){
+      r = responses.find(x => String(x?.criterion_id||x?.criterionId||x?.id) === key) || null;
+    }
+
+    if (!r || r.na) return null;
+    const s = (r.score ?? r.value ?? r.rating ?? r.answer_score);
     const n = Number(s);
     return Number.isFinite(n) ? n : null;
   }
@@ -4142,14 +4153,23 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
   // Pagination for NC table (client report)
   const MAX_NC_ROWS_PER_PAGE = 10;
 
-  const pillarKeys = Object.keys(byPillar||{});
-  // Stable order (uses byPillar.sort_order if present)
-  pillarKeys.sort((a,b)=>{
-    const A = byPillar[a]?.sort_order ?? byPillar[a]?.sortOrder ?? 999;
-    const B = byPillar[b]?.sort_order ?? byPillar[b]?.sortOrder ?? 999;
-    if (A!==B) return A-B;
-    return String(a).localeCompare(String(b));
-  });
+  // Normalize byPillar input:
+// - viewReport provides an ARRAY: [{ label, pct, ... }, ...]
+// - older code may provide an OBJECT map keyed by pillar
+const pillarArr = Array.isArray(byPillar)
+  ? byPillar.map((p,i)=>({ ...(p||{}), __key: (p?.key || p?.pillar || p?.label || String(i)) }))
+  : Object.keys(byPillar||{}).map((k,i)=>({ ...(byPillar[k]||{}), __key: k, label: (byPillar[k]?.label || k) }));
+
+// Stable order (uses sort_order if present, else keep array order)
+pillarArr.sort((a,b)=>{
+  const A = a?.sort_order ?? a?.sortOrder ?? 999;
+  const B = b?.sort_order ?? b?.sortOrder ?? 999;
+  if (A!==B) return A-B;
+  // If no explicit sort_order, keep original order for arrays (using __key fallback)
+  return String(a?.label||a?.__key||"").localeCompare(String(b?.label||b?.__key||""));
+});
+
+const pillarKeys = pillarArr.map(p => String(p?.label || p?.__key || "")); // use LABEL for matching criteria/nc
 
   const siteName = audit?.meta?.siteName || audit?.meta?.site || audit?.siteName || "Site";
   const auditId = audit?.id || audit?.audit_id || "";
@@ -4214,7 +4234,7 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
           <div class="top">M3 Smart Sustainable Standard — Audit Report</div>
           <div class="main">${escHtml(main||"")}</div>
         </div>
-        <div class="header-meta">${escHtml(meta||"")}</div>
+        <div class="header-meta">${escHtml(meta||"").replaceAll("\n","<br/>")}</div>
       </div>`;
   }
 
@@ -4224,7 +4244,8 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
   // Page: Decision
   pages.push(`
   <section class="page">
-    ${pageHeader(`${siteName} — Certification Decision`, `Audit ID: ${escHtml(String(auditId))}<br/>${escHtml(String(auditDate||""))}`)}
+    ${pageHeader(`${siteName} — Certification Decision`, `Audit ID: ${String(auditId||"")}
+${String(auditDate||"")}`)}
     <div class="page-inner">
       <div class="pill ok"><span class="dot"></span><span class="k">Certification level</span><span class="v">${escHtml(String(certLabel||""))}</span></div>
       <div>
@@ -4237,7 +4258,7 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
           <div class="subtitle">Overall and minimum pillar check</div>
           <div style="height:8px"></div>
           <table>
-            <tr><th style="width:42%">Overall</th><td><b>${escHtml(pct(overall?.overallPct||overall?.overall||0))}</b></td></tr>
+            <tr><th style="width:42%">Overall</th><td><b>${escHtml(pct((overall && typeof overall==="object") ? (overall.pct ?? overall.overallPct ?? overall.overall ?? overallPct) : overallPct))}</b></td></tr>
             <tr><th>Minimum pillar</th><td><b>${escHtml(pct(pillarMinPct||0))}</b></td></tr>
             <tr><th>Criteria</th><td><b>${escHtml(String(criteriaCount||0))}</b></td></tr>
           </table>
@@ -4257,22 +4278,27 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
   </section>`);
 
   // Page: Pillar dashboard (compact)
-  const pillarRows = pillarKeys.map(pk=>{
-    const p = byPillar[pk] || {};
-    const pctVal = Number(p.pct ?? p.scorePct ?? p.score ?? 0);
-    const nObs = p.ncObs ?? p.obs ?? 0;
-    const nMin = p.ncMinor ?? p.minor ?? 0;
-    const nMaj = p.ncMajor ?? p.major ?? 0;
+  const pillarRows = pillarArr.map(p=>{
+    const label = String(p?.label || p?.__key || "");
+    const pctVal = Number(p?.pct ?? p?.scorePct ?? p?.score ?? 0);
+
+    // Compute NC counts from normalized NC list (source of truth)
+    const ncs = (normNc||[]).filter(nc => String(nc?.pillar||"").toLowerCase() === label.toLowerCase());
+    const nMaj = ncs.filter(nc => String(nc.level||"").toLowerCase().includes("major")).length;
+    const nMin = ncs.filter(nc => String(nc.level||"").toLowerCase().includes("minor")).length;
+    const nObs = Math.max(0, ncs.length - nMaj - nMin);
+
+    const barW = Math.max(0, Math.min(100, Math.round(pctVal))); // pctVal is already 0..100
     return `
       <tr>
-        <td><b>${escHtml(p.label || pk)}</b><div class="muted">${escHtml(String(p.criteriaCount||""))}</div></td>
-        <td><div class="muted" style="font-weight:900">${escHtml(pct(pctVal))}</div><div class="bar"><span style="width:${Math.round(pctVal*100)}%"></span></div></td>
+        <td><b>${escHtml(label)}</b><div class="muted">${escHtml(String(p.criteriaCount||""))}</div></td>
+        <td><div class="muted" style="font-weight:900">${escHtml(pct(pctVal))}</div><div class="bar"><span style="width:${barW}%"></span></div></td>
         <td>
           ${nMaj?`<span class="tag major">Major ${escHtml(String(nMaj))}</span> `:""}
           ${nMin?`<span class="tag minor">Minor ${escHtml(String(nMin))}</span> `:""}
           ${nObs?`<span class="tag obs">Obs ${escHtml(String(nObs))}</span>`:""}
         </td>
-        <td><span class="tag ok">≥${escHtml(pct(pillarMinPct||0))}</span></td>
+        <td><span class="tag ok">≥${escHtml(pct(minPillarPct))}</span></td>
       </tr>`;
   }).join("");
 
@@ -4294,8 +4320,8 @@ function buildReportHTMLClientV2(audit, dbData, lang, overall, byPillar, byFacil
 
   // Pages: Per pillar deep-dive (Step B)
   pillarKeys.forEach(pk=>{
-    const p = byPillar[pk] || {};
-    const label = p.label || pk;
+    const label = String(pk||"");
+    const p = pillarArr.find(x => String(x?.label||x?.__key||"") === label) || {};
     const pPct = Number(p.pct ?? p.scorePct ?? p.score ?? 0);
 
     const top5 = top5ForPillar(pk);
