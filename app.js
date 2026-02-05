@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.7.2";
+const APP_VERSION = "standalone-2.7.3";
 
 
 function escHtml(str) {
@@ -29,79 +29,7 @@ function parseSupabaseRecoveryFromUrl() {
   const secondIdx = h.indexOf("#", 1);
   if (secondIdx !== -1) {
     frag = h.slice(secondIdx + 1);
-  } 
-
-
-async function handleSupabaseAuthRedirect() {
-  try {
-    const href = String(window.location.href || "");
-    const url = new URL(href);
-
-    // Supabase may redirect with either:
-    // - fragment tokens: #access_token=...&refresh_token=...&type=recovery
-    // - PKCE code: ?code=... (or in fragment when using hash-router)
-    const qsCode = url.searchParams.get("code") || "";
-    const qsType = url.searchParams.get("type") || "";
-
-    const rec = (typeof parseSupabaseRecoveryFromUrl === "function") ? parseSupabaseRecoveryFromUrl() : { hasTokens:false, type:"" };
-
-    // Try to find code in hash/double-hash too
-    let hashCode = "";
-    const h = window.location.hash || "";
-    const secondIdx = h.indexOf("#", 1);
-    if (secondIdx !== -1) {
-      const frag = h.slice(secondIdx + 1);
-      const hp = new URLSearchParams(frag);
-      hashCode = hp.get("code") || "";
-    } else if (h.startsWith("#") && !h.startsWith("#/")) {
-      const hp = new URLSearchParams(h.slice(1));
-      hashCode = hp.get("code") || "";
-    }
-
-    const code = qsCode || hashCode;
-
-    const isUpdatePwdRoute = (window.location.hash || "").includes("/update-password");
-
-    // 1) If we have tokens + recovery type, set session directly (implicit flow).
-    if (rec.hasTokens && (rec.type === "recovery" || qsType === "recovery")) {
-      if (typeof supabase !== "undefined" && supabase?.auth?.setSession) {
-        await supabase.auth.setSession({ access_token: rec.access_token, refresh_token: rec.refresh_token });
-      }
-      window.__FORCE_UPDATE_PASSWORD__ = true;
-      if (!isUpdatePwdRoute || (window.location.hash || "").indexOf("#", 1) !== -1) {
-        window.location.hash = "#/update-password";
-      }
-      return;
-    }
-
-    // 2) If we have a PKCE code (newer Supabase), exchange it for a session.
-    if (code) {
-      if (typeof supabase !== "undefined" && supabase?.auth?.exchangeCodeForSession) {
-        await supabase.auth.exchangeCodeForSession(code);
-      }
-      window.__FORCE_UPDATE_PASSWORD__ = true;
-
-      // Clean URL: remove code/type from query, keep hash route
-      try {
-        url.searchParams.delete("code");
-        url.searchParams.delete("type");
-        const clean = url.origin + url.pathname + (url.searchParams.toString() ? ("?" + url.searchParams.toString()) : "") + "#/update-password";
-        window.history.replaceState({}, "", clean);
-      } catch (e) {
-        window.location.hash = "#/update-password";
-      }
-      return;
-    }
-
-    // If we reached update-password without tokens/code, leave as-is (UI will show invalid/expired).
-    if (isUpdatePwdRoute) window.__FORCE_UPDATE_PASSWORD__ = true;
-  } catch (e) {
-    // ignore
-  }
-}
-
-
-else if (h.startsWith("#") && !h.startsWith("#/")) {
+  } else if (h.startsWith("#") && !h.startsWith("#/")) {
     frag = h.slice(1);
   }
 
@@ -847,6 +775,26 @@ function appBaseUrl(){
   const base = window.location.origin + window.location.pathname;
   return base.endsWith('/') ? base : base + '/';
 }
+
+
+function maybeRouteAuthFromQuery(){
+  try{
+    const u = new URL(window.location.href);
+    const hasCode = !!u.searchParams.get("code");
+    const type = u.searchParams.get("type") || "";
+    const hasTok = !!u.searchParams.get("access_token") || !!u.searchParams.get("refresh_token");
+    const wantsRecovery = (String(type).toLowerCase() === "recovery") || hasCode || hasTok || !!u.searchParams.get("m3_recovery");
+    if (wantsRecovery){
+      const h = window.location.hash || "";
+      if (!h || h === "#" || h === "#/"){
+        window.location.hash = "#/update-password";
+      }
+      // Don't auto-redirect away from update-password when session exists.
+      window.__FORCE_UPDATE_PASSWORD__ = true;
+    }
+  }catch(_e){}
+}
+
 
 function getParamAnywhere(key){
   try{
@@ -1960,7 +1908,7 @@ async function viewForgotPassword(){
     }
     try{
       const sb = await initSupabase();
-      const redirectTo = `${appBaseUrl()}#/update-password`;
+      const redirectTo = `${appBaseUrl()}?m3_recovery=1`;
       const { error } = await sb.auth.resetPasswordForEmail(e, { redirectTo });
       if (error) throw error;
       msg.textContent = t('resetEmailSent');
@@ -4628,6 +4576,7 @@ return viewStart();
 }
 
 // boot
+maybeRouteAuthFromQuery();
 route().catch(err=>{
   console.error(err);
   setRoot(h("div",{},
