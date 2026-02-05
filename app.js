@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.6.8";
+const APP_VERSION = "standalone-2.6.9";
 
 
 function escHtml(str) {
@@ -1902,7 +1902,7 @@ async function viewForgotPassword(){
   setRoot(root);
 }
 
-async \1
+async function viewUpdatePassword(){
   window.__FORCE_UPDATE_PASSWORD__ = true;
 
   if (!ONLINE_ENABLED){
