@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.6.9";
+const APP_VERSION = "standalone-2.7.1";
 
 
 function escHtml(str) {
@@ -789,7 +789,20 @@ function getParamAnywhere(key){
     const v2 = qs.get(key);
     if (v2) return v2;
   }
-    // Fallback: sometimes Supabase puts params directly in the hash (e.g. #access_token=...&type=recovery)
+    
+  // Extra fallback: hash-router + Supabase can produce a double-hash like:
+  //   #/update-password#access_token=...&refresh_token=...&type=recovery
+  // In that case, parse params after the second '#'.
+  try{
+    const h2 = window.location.hash || '';
+    const second = h2.indexOf('#', 1);
+    if (second !== -1){
+      const qs2 = new URLSearchParams(h2.slice(second + 1));
+      const v4 = qs2.get(key);
+      if (v4) return v4;
+    }
+  }catch{}
+// Fallback: sometimes Supabase puts params directly in the hash (e.g. #access_token=...&type=recovery)
   try{
     const h = window.location.hash || '';
     if (h && h.startsWith('#') && !h.startsWith('#/')){
