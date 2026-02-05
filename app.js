@@ -2,7 +2,7 @@
 /* M3 Audit – Standalone (no npm)
    Data model is stored in IndexedDB.
 */
-const APP_VERSION = "standalone-2.6.7";
+const APP_VERSION = "standalone-2.6.8";
 
 
 function escHtml(str) {
@@ -14,6 +14,38 @@ function escHtml(str) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+
+
+
+function parseSupabaseRecoveryFromUrl() {
+  // Supabase verify endpoint redirects with fragment params (access_token, refresh_token, type).
+  // With hash-router redirect_to like https://site/#/update-password, Supabase appends another "#access_token=..."
+  // yielding: "#/update-password#access_token=...&refresh_token=...&type=recovery"
+  const h = window.location.hash || "";
+  const qs = window.location.search || "";
+
+  let frag = "";
+  const secondIdx = h.indexOf("#", 1);
+  if (secondIdx !== -1) {
+    frag = h.slice(secondIdx + 1);
+  } else if (h.startsWith("#") && !h.startsWith("#/")) {
+    frag = h.slice(1);
+  }
+
+  const params = new URLSearchParams(frag);
+  const access_token = params.get("access_token") || "";
+  const refresh_token = params.get("refresh_token") || "";
+  const type = params.get("type") || "";
+
+  const qsp = new URLSearchParams(qs.startsWith("?") ? qs.slice(1) : qs);
+  const qType = qsp.get("type") || "";
+  const effectiveType = type || qType;
+
+  const hasTokens = !!(access_token && refresh_token);
+  return { hasTokens, access_token, refresh_token, type: effectiveType, rawFrag: frag };
+}
+
 
 function criterionShortTitle(c){
   const raw = (c && (c.short_title || c.shortTitle || c.title || c.criterion || c.name || c.label || c.question))
@@ -1870,7 +1902,9 @@ async function viewForgotPassword(){
   setRoot(root);
 }
 
-async function viewUpdatePassword(){
+async \1
+  window.__FORCE_UPDATE_PASSWORD__ = true;
+
   if (!ONLINE_ENABLED){
     return go('#/');
   }
